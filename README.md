@@ -79,7 +79,37 @@ A RAG (Retrieval-Augmented Generation) chat tool that allows you to index docume
 - A reasoning model for generating responses (default: models/gemini-2.0-flash)
 - An embedding model for document indexing (default: models/embedding-001)
 
-The tool supports both Google Generative AI embeddings and HuggingFace embeddings.
+The tool supports both Google Generative AI embeddings and HuggingFace embeddings, and includes answer evaluation capabilities via MLflow.
+
+#### Features
+
+- Interactive and automated question modes
+- Answer evaluation with MLflow metrics
+- Document indexing and retrieval
+- Support for both Google and HuggingFace embeddings
+- Model validation and listing
+
+#### Command Line Arguments
+
+```bash
+python ./llm-simple-rag-chat.py [options]
+```
+
+Generic Options:
+- `-v, --verbose`: Enable verbose mode (use -vv for max verbosity)
+- `-l, --logfile`: Specify log filename
+
+Model Options:
+- `--reasoning-model`: Gemini model for reasoning/chat (default: models/gemini-2.0-flash)
+- `--embedding-model`: Gemini model for embeddings (default: models/embedding-001)
+- `--list-models`: List available Google models and exit
+
+Document Options:
+- `--documents-folder`: Path to the documents folder (default: ./documents)
+
+Mode Options:
+- `--mode`: Mode of operation (choices: interactive, auto, default: interactive)
+- `--questions-file`: Path to the questions JSON file (default: questions.json)
 
 #### Installation
 
@@ -113,24 +143,25 @@ To use the Google Generative AI features:
 
 Note: You may encounter 400 errors due to rate limiting and quotas in Google's services. In such cases, it's recommended to wait a couple of minutes and try again.
 
+#### Usage Examples
+
 Basic usage:
 ```bash
 python ./llm-simple-rag-chat.py --documents-folder /path/to/documents
 ```
 
-The tool will:
-1. Load all documents from the specified folder
-2. Split them into chunks
-3. Create embeddings using the selected model
-4. Build a vector store
-5. Allow you to ask questions about the documents
-
-You can customize the models used:
+Interactive mode (default):
 ```bash
-# Using Google embeddings (default)
-python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --reasoning-model models/gemini-2.0-flash --embedding-model models/embedding-001
+python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --mode interactive
+```
 
-# Using HuggingFace embeddings
+Auto mode with custom questions file:
+```bash
+python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --mode auto --questions-file custom_questions.json
+```
+
+Using HuggingFace embeddings:
+```bash
 python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --embedding-model all-MiniLM-L6-v2
 ```
 
@@ -139,10 +170,12 @@ List available Google models:
 python ./llm-simple-rag-chat.py --list-models
 ```
 
-This option is useful for:
-1. Validating your Gemini API token
-2. Exploring available models for reasoning and embeddings
-3. Finding alternative models that may better suit your needs
+#### Answer Evaluation
+
+When running in auto mode, the tool automatically evaluates answers using MLflow metrics, comparing the model's response to reference answers. Evaluation results are stored in the questions file and include:
+- Exact match score
+- Readability metrics (Flesch-Kincaid grade level, ARI grade level)
+- Token count
 
 ## How It Works
 
