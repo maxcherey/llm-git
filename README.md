@@ -38,7 +38,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
-pip install requests
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -72,6 +72,77 @@ Options:
 - `-t, --threshold`: Skip files with coverage percentage above this threshold
 - `-v, --verbose`: Increase verbosity level (-v for INFO, -vv for DEBUG)
 - `-q, --quiet`: Quiet mode
+
+### LLM Simple RAG Chat
+
+A RAG (Retrieval-Augmented Generation) chat tool that allows you to index documents and ask questions about them. It uses two models:
+- A reasoning model for generating responses (default: models/gemini-2.0-flash)
+- An embedding model for document indexing (default: models/embedding-001)
+
+The tool supports both Google Generative AI embeddings and HuggingFace embeddings.
+
+#### Installation
+
+1. Create a separate virtual environment for llm-simple-rag-chat:
+   ```bash
+   python -m venv venv-rag
+   source venv-rag/bin/activate  # On Windows: venv-rag\Scripts\activate
+   ```
+
+2. Install the required dependencies:
+   ```bash
+   pip install -r llm-simple-rag-chat-requirements.txt
+   ```
+
+#### API Key Setup for Gemini
+
+To use the Google Generative AI features:
+
+1. Copy the `.env.example` file to create your `.env` file:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Obtain a free tier Gemini API key:
+   1. Go to Google AI Studio: Visit https://aistudio.google.com/.
+   2. Sign in with your Google account.
+   3. Click "Get API key" (usually in the top left or center of the page).
+   4. Agree to the terms of service.
+   5. Click "Create API key" (you can choose to create in a new or existing project).
+   6. Copy your generated API key and store it in your `.env` file as `GEMINI_API_KEY`.
+
+Note: You may encounter 400 errors due to rate limiting and quotas in Google's services. In such cases, it's recommended to wait a couple of minutes and try again.
+
+Basic usage:
+```bash
+python ./llm-simple-rag-chat.py --documents-folder /path/to/documents
+```
+
+The tool will:
+1. Load all documents from the specified folder
+2. Split them into chunks
+3. Create embeddings using the selected model
+4. Build a vector store
+5. Allow you to ask questions about the documents
+
+You can customize the models used:
+```bash
+# Using Google embeddings (default)
+python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --reasoning-model models/gemini-2.0-flash --embedding-model models/embedding-001
+
+# Using HuggingFace embeddings
+python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --embedding-model all-MiniLM-L6-v2
+```
+
+List available Google models:
+```bash
+python ./llm-simple-rag-chat.py --list-models
+```
+
+This option is useful for:
+1. Validating your Gemini API token
+2. Exploring available models for reasoning and embeddings
+3. Finding alternative models that may better suit your needs
 
 ## How It Works
 
