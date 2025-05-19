@@ -11,6 +11,8 @@ import google.generativeai as genai
 import sys
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import mlflow
+import pandas as pd
 
 
 
@@ -36,6 +38,12 @@ def parse_arguments():
         "--list-models",
         action="store_true",
         help="List available Google models and exit (useful for validating API token and selecting models)"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["interactive", "auto"],
+        default="interactive",
+        help="Mode of operation: 'interactive' for manual chat or 'auto' for automated questions"
     )
     return parser.parse_args()
 
@@ -220,7 +228,6 @@ def create_embeddings(model_name, api_key=None):
 embeddings = create_embeddings(args.embedding_model, api_key)
 
 # Create a Chroma vector store (local, in-memory by default, or persistent)
-# To make it persistent: persist_directory="./chroma_db"
 vector_store = Chroma.from_documents(chunks, embeddings)
 print("Vector store created.")
 
@@ -248,47 +255,106 @@ qa_chain = RetrievalQA.from_chain_type(
     chain_type_kwargs={"prompt": RAG_PROMPT}
 )
 
-# --- 6. Answer Questions ---
-print("\nReady to answer questions! Type 'exit' to quit.")
-while True:
-    query = input("Your question: ")
-    if query.lower() == 'exit':
-        break
+# Auto mode handler
+def process_auto_mode():
+    import json
     
-    response = qa_chain.invoke({"query": query})
-    print(f"\nAI's Answer: {response['result']}")
-    print("\nSources:")
-    print("    " + "-" * 50)  # Add a separator line with indentation
-    for i, doc in enumerate(response['source_documents']):
-        print(f"--- Document {i+1} ---")
-        # Extract document path and try to identify section
-        doc_path = doc.metadata.get('source', 'N/A')
+    # Load questions from JSON file
+    with open('questions.json', 'r') as f:
+        data = json.load(f)
+    
+    # Process each question
+    for question_data in data['questions']:
+        print(f"\nProcessing question: {question_data['question']}")
         
-        # Try to extract section information
-        section = "Unknown section"
-        content_lines = doc.page_content.split('\n')
+        # Get answer from AI
+        response = qa_chain.invoke({"query": question_data['question']})
+        answer = response['result']
         
-        # Look for potential section headers in the first few lines
-        for i, line in enumerate(content_lines[:5]):
-            # Skip empty lines
-            if not line.strip():
-                continue
-                
-            # Check for markdown headers
-            if line.startswith('#'):
-                section = line.strip('# \t')
-                break
-                
-            # Check for underline-style headers
-            if i > 0 and (all(c == '=' for c in line) or all(c == '-' for c in line)):
-                section = content_lines[i-1].strip()
-                break
-                
-            # Try to use the first non-empty line as section if nothing else found
-            if i == 0 and len(line.strip()) < 100:  # Reasonable section title length
-                section = line.strip()
+        # Update the model_answer field
+        question_data['model_answer'] = answer
         
-        # Print structured information with indentation
-        print("    " + "-" * 40)  # Add a shorter separator line with indentation
-        print(f"    Path: {doc_path}")
-        print(f"    Section: {section}\n")
+        # Prepare evaluation data
+        eval_data = pd.DataFrame({
+            "inputs": [question_data['question']],
+            "ground_truth": [question_data['reference_answer']],
+            "model_answer": [answer],
+            "weights": [question_data['weight']]
+        })
+        
+        # Run evaluation
+        with mlflow.start_run() as run:
+            evaluator = mlflow.evaluate(
+                data=eval_data,
+                targets="ground_truth",
+                predictions="model_answer",
+                model_type="question-answering",
+            )
+            
+            # Get evaluation results
+            eval_table = evaluator.tables["eval_results_table"]
+            metrics = evaluator.metrics
+            
+            # Update eval_results with the evaluation metrics
+            question_data['eval_results'] = {
+                "metrics": metrics,
+                "eval_table": eval_table.to_dict()
+            }
+            
+        # Save progress after each question
+        with open('questions.json', 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        print(f"Answer and evaluation saved for question {question_data['question'][:50]}...")
+        print(f"Evaluation metrics: {metrics}")
+
+    print("\nAll questions processed successfully!")
+
+# Main execution
+if args.mode == "auto":
+    process_auto_mode()
+else:
+    # Interactive mode
+    print("\nReady to answer questions! Type 'exit' to quit.")
+    while True:
+        query = input("Your question: ")
+        if query.lower() == 'exit':
+            break
+        
+        response = qa_chain.invoke({"query": query})
+        print(f"\nAI's Answer: {response['result']}")
+        print("\nSources:")
+        print("    " + "-" * 50)  # Add a separator line with indentation
+        for i, doc in enumerate(response['source_documents']):
+            print(f"--- Document {i+1} ---")
+            # Extract document path and try to identify section
+            doc_path = doc.metadata.get('source', 'N/A')
+            
+            # Try to extract section information
+            section = "Unknown section"
+            content_lines = doc.page_content.split('\n')
+            
+            # Look for potential section headers in the first few lines
+            for i, line in enumerate(content_lines[:5]):
+                # Skip empty lines
+                if not line.strip():
+                    continue
+                    
+                # Check for markdown headers
+                if line.startswith('#'):
+                    section = line.strip('# \t')
+                    break
+                    
+                # Check for underline-style headers
+                if i > 0 and (all(c == '=' for c in line) or all(c == '-' for c in line)):
+                    section = content_lines[i-1].strip()
+                    break
+                    
+                # Try to use the first non-empty line as section if nothing else found
+                if i == 0 and len(line.strip()) < 100:  # Reasonable section title length
+                    section = line.strip()
+            
+            # Print structured information with indentation
+            print("    " + "-" * 40)  # Add a shorter separator line with indentation
+            print(f"    Path: {doc_path}")
+            print(f"    Section: {section}\n")
