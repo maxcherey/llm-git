@@ -14,8 +14,6 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import mlflow
 import pandas as pd
 
-
-
 def parse_arguments():
     """Parse command line arguments for model selection."""
     parser = argparse.ArgumentParser(description="RAG application using Google Gemini models")
@@ -90,121 +88,6 @@ def setup_genai_environment():
     return api_key
 
 
-# Parse command line arguments
-args = parse_arguments()
-
-# Set up environment and get genai API key
-api_key = setup_genai_environment()
-
-# If --list-models is specified, show available models and exit
-if args.list_models:
-    print("\nAvailable Google models:")
-    print("\nModels with generateContent capability:")
-    for model in genai.list_models():
-        if "generateContent" in model.supported_generation_methods:
-            print(f"  {model.name}")
-    print("\nModels with embedContent capability:")
-    for model in genai.list_models():
-        if "embedContent" in model.supported_generation_methods:
-            print(f"  {model.name}")
-    sys.exit(0)
-
-# Validate models
-reasoning_model_valid = validate_model(args.reasoning_model, "generateContent")
-
-# Only validate embedding model if it's a Google model
-if args.embedding_model.startswith("gemini"):
-    embedding_model_valid = validate_model(args.embedding_model, "embedContent")
-    if not embedding_model_valid:
-        print("Invalid embedding model specified. Exiting.")
-        sys.exit(1)
-else:
-    embedding_model_valid = True
-    print("Using HuggingFace embeddings - skipping model validation")
-
-if not reasoning_model_valid:
-    print("Invalid reasoning model specified. Exiting.")
-    sys.exit(1)
-
-
-# Initialize the LLM with the validated model
-print(f"Initializing LLM with model: {args.reasoning_model}")
-llm = ChatGoogleGenerativeAI(
-    model=args.reasoning_model,
-    temperature=0.1,
-    google_api_key=api_key  # Explicitly pass the key
-)
-
-# Test the LLM
-print("Testing LLM...")
-try:
-    response = llm.invoke("What is the capital of France?")
-    print(f"LLM Response: {response.content}")
-except Exception as e:
-    print(f"Error initializing or using LLM: {e}")
-    sys.exit(1)
-
-# --- 1. Load Documents (Recursively) ---
-document_folder = args.documents_folder
-documents = []
-
-print(f"Starting to load documents from: {document_folder}")
-
-# Use os.walk to traverse through the main folder and all its subfolders
-for dirpath, dirnames, filenames in os.walk(document_folder):
-    for filename in filenames:
-        file_path = os.path.join(dirpath, filename)
-        
-        # Determine the correct loader based on file extension
-        if filename.endswith(".pdf"):
-            try:
-                loader = PyPDFLoader(file_path)
-                documents.extend(loader.load())
-                print(f"Loaded PDF: {file_path}")
-            except Exception as e:
-                print(f"Error loading PDF {file_path}: {e}")
-        elif filename.endswith(".txt"):
-            try:
-                loader = TextLoader(file_path, encoding='utf-8') # Specify encoding for text files
-                documents.extend(loader.load())
-                print(f"Loaded TXT: {file_path}")
-            except Exception as e:
-                print(f"Error loading TXT {file_path}: {e}")
-        elif filename.endswith(".md") or filename.endswith(".markdown"):
-            try:
-                loader = UnstructuredMarkdownLoader(file_path)
-                documents.extend(loader.load())
-                print(f"Loaded Markdown: {file_path}")
-            except Exception as e:
-                print(f"Error loading Markdown {file_path}: {e}")
-        # Add more `elif` conditions here for other document types (e.g., .docx, .html)
-        # elif filename.endswith(".docx"):
-        #     try:
-        #         from langchain_community.document_loaders import UnstructuredWordDocumentLoader
-        #         loader = UnstructuredWordDocumentLoader(file_path)
-        #         documents.extend(loader.load())
-        #         print(f"Loaded DOCX: {file_path}")
-        #     except Exception as e:
-        #         print(f"Error loading DOCX {file_path}: {e}")
-        else:
-            print(f"Skipping unsupported file type: {file_path}")
-
-
-print(f"\nFinished loading. Total documents loaded: {len(documents)}")
-
-# --- 2. Split Documents into Chunks ---
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=200,
-    length_function=len,
-    is_separator_regex=False,
-)
-chunks = text_splitter.split_documents(documents)
-print(f"Split into {len(chunks)} chunks.")
-
-# --- 3. Create Embeddings and Store in Vector Store ---
-print(f"Initializing embeddings with model: {args.embedding_model}")
-
 # Function to create embeddings based on model type
 def create_embeddings(model_name, api_key=None):
     """Create embeddings instance based on model name.
@@ -224,36 +107,6 @@ def create_embeddings(model_name, api_key=None):
     else:  # HuggingFace embeddings
         return HuggingFaceEmbeddings(model_name=model_name)
 
-# Create embeddings instance
-embeddings = create_embeddings(args.embedding_model, api_key)
-
-# Create a Chroma vector store (local, in-memory by default, or persistent)
-vector_store = Chroma.from_documents(chunks, embeddings)
-print("Vector store created.")
-
-# --- 4. Define the Retriever ---
-retriever = vector_store.as_retriever(search_kwargs={"k": 3}) # Retrieve top 3 relevant chunks
-
-# --- 5. Build the RAG Chain ---
-# Define a custom prompt to guide Gemini
-template = """Use the following pieces of context to answer the user's question.
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
-Keep the answer concise and to the point.
-
-Context: {context}
-
-Question: {question}
-
-Answer:"""
-RAG_PROMPT = PromptTemplate(template=template, input_variables=["context", "question"])
-
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff", # 'stuff' combines all retrieved documents into one context
-    retriever=retriever,
-    return_source_documents=True, # Optional: return the chunks that were used
-    chain_type_kwargs={"prompt": RAG_PROMPT}
-)
 
 # Auto mode handler
 def process_auto_mode():
@@ -310,11 +163,12 @@ def process_auto_mode():
 
     print("\nAll questions processed successfully!")
 
-# Main execution
-if args.mode == "auto":
-    process_auto_mode()
-else:
-    # Interactive mode
+def run_interactive_mode(qa_chain):
+    """Run interactive mode for answering questions.
+    
+    Args:
+        qa_chain: The RAG chain for answering questions
+    """
     print("\nReady to answer questions! Type 'exit' to quit.")
     while True:
         query = input("Your question: ")
@@ -358,3 +212,188 @@ else:
             print("    " + "-" * 40)  # Add a shorter separator line with indentation
             print(f"    Path: {doc_path}")
             print(f"    Section: {section}\n")
+
+def create_llm():
+    # Set up environment and get genai API key
+    api_key = setup_genai_environment()
+
+    # If --list-models is specified, show available models and exit
+    if args.list_models:
+        print("\nAvailable Google models:")
+        print("\nModels with generateContent capability:")
+        for model in genai.list_models():
+            if "generateContent" in model.supported_generation_methods:
+                print(f"  {model.name}")
+        print("\nModels with embedContent capability:")
+        for model in genai.list_models():
+            if "embedContent" in model.supported_generation_methods:
+                print(f"  {model.name}")
+        sys.exit(0)
+
+    # Validate models
+    reasoning_model_valid = validate_model(args.reasoning_model, "generateContent")
+
+    # Only validate embedding model if it's a Google model
+    if args.embedding_model.startswith("gemini"):
+        embedding_model_valid = validate_model(args.embedding_model, "embedContent")
+        if not embedding_model_valid:
+            print("Invalid embedding model specified. Exiting.")
+            sys.exit(1)
+    else:
+        embedding_model_valid = True
+        print("Using HuggingFace embeddings - skipping model validation")
+
+    if not reasoning_model_valid:
+        print("Invalid reasoning model specified. Exiting.")
+        sys.exit(1)
+
+
+    # Initialize the LLM with the validated model
+    print(f"Initializing LLM with model: {args.reasoning_model}")
+    llm = ChatGoogleGenerativeAI(
+        model=args.reasoning_model,
+        temperature=0.1,
+        google_api_key=api_key  # Explicitly pass the key
+    )
+
+    # Test the LLM
+    print("Testing LLM...")
+    try:
+        response = llm.invoke("What is the capital of France?")
+        print(f"LLM Response: {response.content}")
+    except Exception as e:
+        print(f"Error initializing or using LLM: {e}")
+        sys.exit(1)
+
+    return api_key, llm
+
+def load_documents(document_folder):
+    documents = []
+
+    print(f"Starting to load documents from: {document_folder}")
+
+    # Use os.walk to traverse through the main folder and all its subfolders
+    for dirpath, dirnames, filenames in os.walk(document_folder):
+        for filename in filenames:
+            file_path = os.path.join(dirpath, filename)
+            
+            # Determine the correct loader based on file extension
+            if filename.endswith(".pdf"):
+                try:
+                    loader = PyPDFLoader(file_path)
+                    loaded_docs = loader.load()
+                    if loaded_docs is not None:
+                        documents.extend(loaded_docs)
+                    print(f"Loaded PDF: {file_path}")
+                except Exception as e:
+                    print(f"Error loading PDF {file_path}: {e}")
+            elif filename.endswith(".txt"):
+                try:
+                    loader = TextLoader(file_path, encoding='utf-8') # Specify encoding for text files
+                    loaded_docs = loader.load()
+                    if loaded_docs is not None:
+                        documents.extend(loaded_docs)
+                    print(f"Loaded TXT: {file_path}")
+                except Exception as e:
+                    print(f"Error loading TXT {file_path}: {e}")
+            elif filename.endswith(".md") or filename.endswith(".markdown"):
+                try:
+                    loader = UnstructuredMarkdownLoader(file_path)
+                    loaded_docs = loader.load()
+                    if loaded_docs is not None:
+                        documents.extend(loaded_docs)
+                    print(f"Loaded Markdown: {file_path}")
+                except Exception as e:
+                    print(f"Error loading Markdown {file_path}: {e}")
+            # Add more `elif` conditions here for other document types (e.g., .docx, .html)
+            # elif filename.endswith(".docx"):
+            #     try:
+            #         from langchain_community.document_loaders import UnstructuredWordDocumentLoader
+            #         loader = UnstructuredWordDocumentLoader(file_path)
+            #         loaded_docs = loader.load()
+            #         if loaded_docs is not None:
+            #             documents.extend(loaded_docs)
+            #         print(f"Loaded DOCX: {file_path}")
+            #     except Exception as e:
+            #         print(f"Error loading DOCX {file_path}: {e}")
+            else:
+                print(f"Skipping unsupported file type: {file_path}")
+    
+    print(f"\nFinished loading. Total documents loaded: {len(documents)}")
+    return documents if documents else []
+
+def split_documents(documents, chunk_size=1000, chunk_overlap=200):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=len,
+        is_separator_regex=False,
+    )
+    return text_splitter.split_documents(documents)
+
+def build_rag_system(embedding_model, api_key, chunks, llm):
+    """Build the complete RAG system including embeddings, vector store, and chain.
+    
+    Args:
+        embedding_model: Name of the embedding model
+        api_key: API key for embeddings
+        chunks: List of document chunks
+        llm: Language model instance
+        
+    Returns:
+        RetrievalQA: Configured RAG chain
+    """
+    print(f"Initializing embeddings with model: {embedding_model}")
+    
+    # Create embeddings instance
+    embeddings = create_embeddings(embedding_model, api_key)
+    
+    # Create a Chroma vector store
+    vector_store = Chroma.from_documents(chunks, embeddings)
+    print("Vector store created.")
+    
+    # Create retriever
+    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+    
+    # Define custom prompt
+    template = """Use the following pieces of context to answer the user's question.
+If you don't know the answer, just say that you don't know, don't try to make up an answer.
+Keep the answer concise and to the point.
+
+Context: {context}
+
+Question: {question}
+
+Answer:"""
+    RAG_PROMPT = PromptTemplate(template=template, input_variables=["context", "question"])
+    
+    # Build RAG chain
+    return RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": RAG_PROMPT}
+    )
+
+# Main execution
+
+# Parse command line arguments
+args = parse_arguments()
+
+
+api_key, llm = create_llm()
+document_folder = args.documents_folder
+documents = load_documents(document_folder)
+
+chunks = split_documents(documents)
+print(f"Split into {len(chunks)} chunks.")
+
+qa_chain = build_rag_system(args.embedding_model, api_key, chunks, llm)
+
+
+
+if args.mode == "auto":
+    process_auto_mode()
+else:
+    run_interactive_mode(qa_chain)
