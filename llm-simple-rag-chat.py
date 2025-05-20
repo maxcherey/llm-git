@@ -29,11 +29,11 @@ def parse_arguments():
     g.add_argument('-l', '--logfile', action='store', help='log filename')
 
     g = parser.add_argument_group('Model options')
-    g.add_argument('--reasoning-model', 
+    g.add_argument('--reasoning-model',
         default="models/gemini-2.0-flash",
         help="Gemini model for reasoning/chat"
     )
-    g.add_argument('--embedding-model', 
+    g.add_argument('--embedding-model',
         default="models/embedding-001",
         help="Gemini model for embeddings"
     )
@@ -65,13 +65,13 @@ def parse_arguments():
 def validate_model(model_name, required_capability):
     available_models = []
     model_found = False
-    
+
     for model in genai.list_models():
         if required_capability in model.supported_generation_methods:
             available_models.append(model.name)
             if model.name == model_name:
                 model_found = True
-                
+
     if not model_found:
         print(f"ERROR: Model '{model_name}' not found or doesn't support {required_capability}.")
         print("Available models with this capability:")
@@ -97,7 +97,7 @@ def setup_genai_environment():
         sys.exit(1)  # Stop if no key
 
     genai.configure(api_key=api_key)
-    
+
     return api_key
 
 
@@ -115,22 +115,22 @@ def create_embeddings(model_name, api_key=None):
 # Auto mode handler
 def process_auto_mode(qa_chain, questions_file):
     import json
-    
+
     # Load questions from JSON file
     with open(questions_file, 'r') as f:
         data = json.load(f)
-    
+
     # Process each question
     for question_data in data['questions']:
         print(f"\nProcessing question: {question_data['question']}")
-        
+
         # Get answer from AI
         response = qa_chain.invoke({"query": question_data['question']})
         answer = response['result']
-        
+
         # Update the model_answer field
         question_data['model_answer'] = answer
-        
+
         # Run evaluation
         eval_results = evaluate_answer(
             question_data['question'],
@@ -139,22 +139,22 @@ def process_auto_mode(qa_chain, questions_file):
             verbose=False,  # Don't print results in auto mode
             weight=question_data['weight']
         )
-        
+
         if eval_results:
             # Update eval_results with the evaluation metrics
             question_data['eval_results'] = {
                 "metrics": eval_results['metrics'],
                 "eval_table": eval_results['eval_table'].to_dict()
             }
-            
+
             # Print summary metrics
             metrics = eval_results['metrics']
             print(f"Evaluation metrics: {metrics}")
-        
+
         # Save progress after each question
         with open(questions_file, 'w') as f:
             json.dump(data, f, indent=2)
-        
+
         print(f"Answer and evaluation saved for question {question_data['question'][:50]}...")
         print(f"Evaluation metrics: {metrics}")
 
@@ -163,7 +163,7 @@ def process_auto_mode(qa_chain, questions_file):
 def evaluate_answer(query, answer, reference_answer=None, verbose=True, weight=1.0):
     if not reference_answer:
         return None
-        
+
     # Prepare evaluation data
     eval_data = pd.DataFrame({
         "inputs": [query],
@@ -171,7 +171,7 @@ def evaluate_answer(query, answer, reference_answer=None, verbose=True, weight=1
         "model_answer": [answer],
         "weights": [weight]
     })
-    
+
     # Run evaluation
     with mlflow.start_run() as run:
         evaluator = mlflow.evaluate(
@@ -180,11 +180,11 @@ def evaluate_answer(query, answer, reference_answer=None, verbose=True, weight=1
             predictions="model_answer",
             model_type="question-answering",
         )
-        
+
         # Get evaluation results
         eval_table = evaluator.tables["eval_results_table"]
         metrics = evaluator.metrics
-        
+
         if verbose:
             print("\nEvaluation Results:")
             print("-" * 50)
@@ -192,7 +192,7 @@ def evaluate_answer(query, answer, reference_answer=None, verbose=True, weight=1
             print(f"Flesch-Kincaid Grade Level: {metrics.get('flesch_kincaid_grade_level/v1/mean', 0.0):.2f}")
             print(f"ARI Grade Level: {metrics.get('ari_grade_level/v1/mean', 0.0):.2f}")
             print("-" * 50)
-        
+
         return {
             "metrics": metrics,
             "eval_table": eval_table
@@ -204,7 +204,7 @@ def run_interactive_mode(qa_chain):
         query = input("Your question: ")
         if query.lower() == 'exit':
             break
-        
+
         response = qa_chain.invoke({"query": query})
         answer = response['result']
         print(f"\nAI's Answer: {answer}")
@@ -214,22 +214,22 @@ def run_interactive_mode(qa_chain):
             print(f"--- Document {i+1} ---")
             # Extract document path and try to identify section
             doc_path = doc.metadata.get('source', 'N/A')
-            
+
             # Try to extract section information
             section = "Unknown section"
             content_lines = doc.page_content.split('\n')
-            
+
             # Look for potential section headers in the first few lines
             for i, line in enumerate(content_lines[:5]):
                 # Skip empty lines
                 if not line.strip():
                     continue
-                    
+
                 # Check for markdown headers
                 if line.startswith('#'):
                     section = line.strip('# \t')
                     break
-                    
+
             print(f"    Path: {doc_path}")
             print(f"    Section: {section}\n")
 
@@ -302,7 +302,7 @@ def load_documents(document_folder):
     for dirpath, dirnames, filenames in os.walk(document_folder):
         for filename in filenames:
             file_path = os.path.join(dirpath, filename)
-            
+
             # Determine the correct loader based on file extension
             if filename.endswith(".pdf"):
                 try:
@@ -344,7 +344,7 @@ def load_documents(document_folder):
             #         print(f"Error loading DOCX {file_path}: {e}")
             else:
                 print(f"Skipping unsupported file type: {file_path}")
-    
+
     print(f"\nFinished loading. Total documents loaded: {len(documents)}")
     return documents if documents else []
 
@@ -359,17 +359,17 @@ def split_documents(documents, chunk_size=1000, chunk_overlap=200):
 
 def build_rag_system(embedding_model, api_key, chunks, llm):
     print(f"Initializing embeddings with model: {embedding_model}")
-    
+
     # Create embeddings instance
     embeddings = create_embeddings(embedding_model, api_key)
-    
+
     # Create a Chroma vector store
     vector_store = Chroma.from_documents(chunks, embeddings)
     print("Vector store created.")
-    
+
     # Create retriever
     retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-    
+
     # Define custom prompt
     template = """Use the following pieces of context to answer the user's question.
 If you don't know the answer, just say that you don't know, don't try to make up an answer.
@@ -381,7 +381,7 @@ Question: {question}
 
 Answer:"""
     RAG_PROMPT = PromptTemplate(template=template, input_variables=["context", "question"])
-    
+
     # Build RAG chain
     return RetrievalQA.from_chain_type(
         llm=llm,
@@ -401,7 +401,7 @@ def main():
         level = logging.DEBUG if args.verbose > 1 else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s - %(levelname)6s - %(message)s")
 
-    
+
     api_key, llm = create_llm(args)
 
     # If list models flag is set, exit after listing models
@@ -411,7 +411,7 @@ def main():
     # Load and process documents
     documents = load_documents(args.documents_folder)
     chunks = split_documents(documents)
-    
+
     # Create LLM and build RAG system
 
     qa_chain = build_rag_system(args.embedding_model, api_key, chunks, llm)
