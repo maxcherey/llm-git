@@ -179,7 +179,7 @@ def main():
     
     # Create LLM and build RAG system
 
-    qa_chain = build_rag_system(args.embedding_model, api_key, chunks, llm)
+    qa_chain = build_rag_system(args.embedding_model, api_key, chunks, llm, args.cache_dir)
 
     # Run in selected mode
     if args.mode == "interactive":
