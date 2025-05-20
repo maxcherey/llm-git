@@ -3,7 +3,7 @@ import sys
 from dotenv import load_dotenv
 import google.generativeai as genai
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 def setup_genai_environment():
     print("Attempting to load .env...")
@@ -52,7 +52,10 @@ def create_embeddings(model_name, api_key=None):
             api_key=api_key
         )
     else:  # HuggingFace embeddings
-        return HuggingFaceEmbeddings(model_name=model_name)
+        return HuggingFaceEmbeddings(
+            model_name=model_name,
+            model_kwargs={'device': 'cpu'}
+        )
 
 
 def create_llm(args):

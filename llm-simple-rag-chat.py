@@ -5,6 +5,11 @@ import argparse
 import logging
 import json
 from pathlib import Path
+
+# Suppress TensorFlow and XLA logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+
 from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_llm
 from llm_simple_rag_chat.document_utils import load_and_cache_chunks, load_documents, split_documents
 from llm_simple_rag_chat.rag_utils import build_rag_system
@@ -60,51 +65,78 @@ def parse_arguments():
     return parser.parse_args()
 
 # Auto mode handler
-def process_auto_mode(qa_chain, questions_file, cache_dir):
+def process_auto_mode(qa_chain, questions_file, cache_dir, args):
     import json
+    from datetime import datetime
     
     # Load questions from JSON file
     with open(questions_file, 'r') as f:
-        data = json.load(f)
+        questions_data = json.load(f)
     
-    # Process each question
-    for question_data in data['questions']:
-        print(f"\nProcessing question: {question_data['question']}")
+    # Generate output filename with timestamp and model name
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_filename = f"{Path(questions_file).stem}_evaluation_results_{args.embedding_model.replace('/', '_')}_{timestamp}.json"
+    output_path = Path(questions_file).parent / output_filename
+    
+    # Initialize output data structure
+    output_data = {
+        "metadata": {
+            "timestamp": timestamp,
+            "model": args.embedding_model,
+            "source_file": questions_file
+        },
+        "categories": {}   
+    }
+    
+    # Process each category
+    for category, category_data in questions_data['categories'].items():
+        print(f"\nProcessing category: {category}")
+        output_data['categories'][category] = {"questions": []}
         
-        # Get answer from AI
-        response = qa_chain.invoke({"query": question_data['question']})
-        answer = response['result']
-        
-        # Update the model_answer field
-        question_data['model_answer'] = answer
-        
-        # Run evaluation with cache directory
-        eval_results = evaluate_answer(
-            question_data['question'],
-            answer,
-            question_data['reference_answer'],
-            verbose=False,  # Don't print results in auto mode
-            weight=question_data['weight'],
-            cache_dir=cache_dir
-        )
-        
-        if eval_results:
-            # Update eval_results with the evaluation metrics
-            question_data['eval_results'] = {
-                "metrics": eval_results['metrics'],
-                "eval_table": eval_results['eval_table'].to_dict()
+        # Process each question in the category
+        for question_data in category_data['questions']:
+            print(f"\nProcessing question: {question_data['question']}")
+            
+            # Get answer from AI
+            response = qa_chain.invoke({"query": question_data['question']})
+            answer = response['result']
+            
+            # Run evaluation with cache directory
+            eval_results = evaluate_answer(
+                question_data['question'],
+                answer,
+                question_data['reference_answer'],
+                verbose=False,  # Don't print results in auto mode
+                weight=question_data['weight'],
+                cache_dir=cache_dir
+            )
+            
+            # Create output question data
+            output_question = {
+                "question": question_data['question'],
+                "reference_answer": question_data['reference_answer'],
+                "weight": question_data['weight'],
+                "model_answer": answer,
+                "eval_results": {
+                    "metrics": eval_results['metrics'] if eval_results else {},
+                    "eval_table": eval_results['eval_table'].to_dict() if eval_results else {}
+                }
             }
             
+            # Add to output data
+            output_data['categories'][category]['questions'].append(output_question)
+            
             # Print summary metrics
-            metrics = eval_results['metrics']
-            print(f"Evaluation metrics: {metrics}")
-        
-        # Save progress after each question
-        with open(questions_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        print(f"Answer and evaluation saved for question {question_data['question'][:50]}...")
-        print(f"Evaluation metrics: {metrics}")
+            if eval_results:
+                metrics = eval_results['metrics']
+                print(f"Evaluation metrics: {metrics}")
+            
+    # Save evaluation results
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    
+    print(f"\nEvaluation results saved to: {output_path}")
+    print("All questions processed successfully!")
 
     print("\nAll questions processed successfully!")
 
@@ -189,7 +221,7 @@ def main():
     if args.mode == "interactive":
         run_interactive_mode(qa_chain, args.cache_dir)
     else:
-        process_auto_mode(qa_chain, args.questions_file, args.cache_dir)
+        process_auto_mode(qa_chain, args.questions_file, args.cache_dir, args)
 
     # Log execution time
     time_end = time.time()

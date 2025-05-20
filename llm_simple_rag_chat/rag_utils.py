@@ -1,7 +1,7 @@
 import os
 import json
 import hashlib
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from llm_simple_rag_chat.genai_utils import create_embeddings
