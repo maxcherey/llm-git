@@ -3,6 +3,8 @@ import os
 import time
 import argparse
 import logging
+import json
+from pathlib import Path
 from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_llm
 from llm_simple_rag_chat.document_utils import load_documents, split_documents
 from llm_simple_rag_chat.rag_utils import build_rag_system
@@ -49,6 +51,10 @@ def parse_arguments():
     g.add_argument('--questions-file',
         default="questions.json",
         help="Path to the questions JSON file"
+    )
+    g.add_argument('--cache-dir',
+        default=".cache",
+        help="Directory to store cached artifacts and data"
     )
 
     return parser.parse_args()
@@ -144,7 +150,13 @@ def run_interactive_mode(qa_chain):
 
 def main():
     args = parse_arguments()
-
+    
+    # Ensure cache directory exists
+    cache_dir = Path(args.cache_dir)
+    if not cache_dir.exists():
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Created cache directory at: {cache_dir}")
+    
     # Set up logging
     if args.verbose is None:
         level = logging.WARNING
@@ -152,7 +164,9 @@ def main():
         level = logging.DEBUG if args.verbose > 1 else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s - %(levelname)6s - %(message)s")
 
-    
+    # Setup Google Generative AI environment
+    setup_genai_environment()
+
     api_key, llm = create_llm(args)
 
     # If list models flag is set, exit after listing models
