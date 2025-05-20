@@ -6,7 +6,7 @@ import logging
 import json
 from pathlib import Path
 from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_llm
-from llm_simple_rag_chat.document_utils import load_documents, split_documents
+from llm_simple_rag_chat.document_utils import load_and_cache_chunks, load_documents, split_documents
 from llm_simple_rag_chat.rag_utils import build_rag_system
 from llm_simple_rag_chat.eval_utils import evaluate_answer
 
@@ -173,9 +173,9 @@ def main():
     if args.list_models:
         return
 
-    # Load and process documents
-    documents = load_documents(args.documents_folder)
-    chunks = split_documents(documents)
+    # Load and cache document chunks
+    chunks, changed = load_and_cache_chunks(args.documents_folder, args.cache_dir)
+    print(f"\nDocument chunks loaded. Changes detected: {changed}")
     
     # Create LLM and build RAG system
 
