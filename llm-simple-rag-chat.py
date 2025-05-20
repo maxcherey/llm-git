@@ -239,22 +239,22 @@ def run_interactive_mode(qa_chain):
             evaluate_answer(query, answer, reference_answer)
 
 
+def list_models(args):
+    api_key = setup_genai_environment()
+    print("\nAvailable Google models:")
+    print("\nModels with generateContent capability:")
+    for model in genai.list_models():
+        if "generateContent" in model.supported_generation_methods:
+            print(f"  {model.name}")
+    print("\nModels with embedContent capability:")
+    for model in genai.list_models():
+        if "embedContent" in model.supported_generation_methods:
+            print(f"  {model.name}")
+
+
 def create_llm(args):
     # Set up environment and get genai API key
     api_key = setup_genai_environment()
-
-    # If --list-models is specified, show available models and exit
-    if args.list_models:
-        print("\nAvailable Google models:")
-        print("\nModels with generateContent capability:")
-        for model in genai.list_models():
-            if "generateContent" in model.supported_generation_methods:
-                print(f"  {model.name}")
-        print("\nModels with embedContent capability:")
-        for model in genai.list_models():
-            if "embedContent" in model.supported_generation_methods:
-                print(f"  {model.name}")
-        sys.exit(0)
 
     # Validate models
     reasoning_model_valid = validate_model(args.reasoning_model, "generateContent")
@@ -400,6 +400,10 @@ def main():
     else:
         level = logging.DEBUG if args.verbose > 1 else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s - %(levelname)6s - %(message)s")
+
+    if args.list_models:
+        list_models(args)
+        return
 
     # Validate documents folder
     if not os.path.exists(args.documents_folder) or not os.path.isdir(args.documents_folder) :
