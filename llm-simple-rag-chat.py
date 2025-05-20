@@ -4,11 +4,11 @@ import time
 import argparse
 import logging
 import json
+from datetime import datetime
 from pathlib import Path
 
 # Suppress TensorFlow and XLA logs
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
 
 from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_llm
 from llm_simple_rag_chat.document_utils import load_and_cache_chunks, load_documents, split_documents
@@ -65,28 +65,14 @@ def parse_arguments():
     return parser.parse_args()
 
 # Auto mode handler
-def process_auto_mode(qa_chain, questions_file, cache_dir, args):
-    import json
-    from datetime import datetime
-    
+def process_auto_mode(qa_chain, questions_file, cache_dir, args):  
     # Load questions from JSON file
     with open(questions_file, 'r') as f:
         questions_data = json.load(f)
     
-    # Generate output filename with timestamp and model name
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_filename = f"{Path(questions_file).stem}_evaluation_results_{args.embedding_model.replace('/', '_')}_{timestamp}.json"
-    output_path = Path(questions_file).parent / output_filename
-    
-    # Initialize output data structure
-    output_data = {
-        "metadata": {
-            "timestamp": timestamp,
-            "model": args.embedding_model,
-            "source_file": questions_file
-        },
-        "categories": {}   
-    }
+    # Initialize result file
+    output_path, output_data = initialize_result_file(args, questions_file)
+    output_data["categories"] = {}
     
     # Process each category
     for category, category_data in questions_data['categories'].items():
@@ -131,20 +117,59 @@ def process_auto_mode(qa_chain, questions_file, cache_dir, args):
                 metrics = eval_results['metrics']
                 print(f"Evaluation metrics: {metrics}")
             
-    # Save evaluation results
-    with open(output_path, 'w') as f:
-        json.dump(output_data, f, indent=2)
+        # Save evaluation results
+        with open(output_path, 'w') as f:
+            json.dump(output_data, f, indent=2)
+        
+        print(f"\nEvaluation results saved to: {output_path}")
+        print("All questions processed successfully!")
+    return output_path, output_data
+
+def initialize_result_file(args, source_file=None):
+    # Generate timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    print(f"\nEvaluation results saved to: {output_path}")
-    print("All questions processed successfully!")
+    # Create results directory
+    results_dir = Path('.results')
+    results_dir.mkdir(exist_ok=True)
+    
+    # Generate output filename based on mode
+    if args.mode == "auto":
+        output_filename = f"{timestamp}_{Path(source_file).stem}_evaluation_results_{args.embedding_model.replace('/', '_')}.json"
+    else:
+        output_filename = f"{timestamp}_interactive_session_{args.embedding_model.replace('/', '_')}.json"
+    
+    # Create output path
+    output_path = results_dir / output_filename
+    
+    # Initialize output data structure
+    output_data = {
+        "metadata": {
+            "timestamp": timestamp,
+            "model": args.embedding_model,
+            "mode": args.mode,
+            "source_file": source_file
+        }
+    }
+    
+    return output_path, output_data
 
-    print("\nAll questions processed successfully!")
 
-def run_interactive_mode(qa_chain, cache_dir):
+def run_interactive_mode(qa_chain, cache_dir, args):
     print("\nReady to answer questions! Type 'exit' to quit.")
+    
+    # Initialize interactive session data
+    output_path, session_data = initialize_result_file(args)
+    session_data["questions"] = []
+    
     while True:
-        query = input("Your question: ")
+        query = input("\nYour question: ")
         if query.lower() == 'exit':
+            # Save session data before exiting
+            with open(output_path, 'w') as f:
+                json.dump(session_data, f, indent=2)
+            
+            print(f"\nInteractive session saved to: {output_path}")
             break
         
         response = qa_chain.invoke({"query": query})
@@ -178,7 +203,23 @@ def run_interactive_mode(qa_chain, cache_dir):
         # Get reference answer for evaluation
         reference_answer = input("\nPlease provide the reference answer for evaluation (or press Enter to skip): ")
         if reference_answer:
-            evaluate_answer(query, answer, reference_answer, cache_dir=cache_dir)
+            eval_results = evaluate_answer(query, answer, reference_answer, cache_dir=cache_dir)
+            
+            # Add question data to session
+            session_data['questions'].append({
+                "question": query,
+                "reference_answer": reference_answer,
+                "model_answer": answer,
+                "eval_results": {
+                    "metrics": eval_results['metrics'] if eval_results else {},
+                    "eval_table": eval_results['eval_table'].to_dict() if eval_results else {}
+                }
+            })
+            
+            # Print evaluation metrics
+            if eval_results:
+                metrics = eval_results['metrics']
+                print(f"\nEvaluation metrics: {metrics}")
 
 
 def main():
@@ -219,7 +260,7 @@ def main():
 
     # Run in selected mode
     if args.mode == "interactive":
-        run_interactive_mode(qa_chain, args.cache_dir)
+        run_interactive_mode(qa_chain, args.cache_dir, args)
     else:
         process_auto_mode(qa_chain, args.questions_file, args.cache_dir, args)
 
