@@ -401,6 +401,10 @@ def main():
         level = logging.DEBUG if args.verbose > 1 else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s - %(levelname)6s - %(message)s")
 
+    # Validate documents folder
+    if not os.path.exists(args.documents_folder) or not os.path.isdir(args.documents_folder) :
+        print(f"Documents folder {args.documents_folder} does not exist or is not a directory. See the --documents-folder option. Exiting.")
+        return
 
     api_key, llm = create_llm(args)
 
