@@ -8,7 +8,7 @@ from pathlib import Path
 from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_llm
 from llm_simple_rag_chat.document_utils import load_and_cache_chunks, load_documents, split_documents
 from llm_simple_rag_chat.rag_utils import build_rag_system
-from llm_simple_rag_chat.eval_utils import evaluate_answer
+from llm_simple_rag_chat.eval_utils import evaluate_answer, configure_mlflow
 
 exectime_internal = 0.0
 exectime_external = 0.0
@@ -60,7 +60,7 @@ def parse_arguments():
     return parser.parse_args()
 
 # Auto mode handler
-def process_auto_mode(qa_chain, questions_file):
+def process_auto_mode(qa_chain, questions_file, cache_dir):
     import json
     
     # Load questions from JSON file
@@ -78,13 +78,14 @@ def process_auto_mode(qa_chain, questions_file):
         # Update the model_answer field
         question_data['model_answer'] = answer
         
-        # Run evaluation
+        # Run evaluation with cache directory
         eval_results = evaluate_answer(
             question_data['question'],
             answer,
             question_data['reference_answer'],
             verbose=False,  # Don't print results in auto mode
-            weight=question_data['weight']
+            weight=question_data['weight'],
+            cache_dir=cache_dir
         )
         
         if eval_results:
@@ -107,7 +108,7 @@ def process_auto_mode(qa_chain, questions_file):
 
     print("\nAll questions processed successfully!")
 
-def run_interactive_mode(qa_chain):
+def run_interactive_mode(qa_chain, cache_dir):
     print("\nReady to answer questions! Type 'exit' to quit.")
     while True:
         query = input("Your question: ")
@@ -145,7 +146,7 @@ def run_interactive_mode(qa_chain):
         # Get reference answer for evaluation
         reference_answer = input("\nPlease provide the reference answer for evaluation (or press Enter to skip): ")
         if reference_answer:
-            evaluate_answer(query, answer, reference_answer)
+            evaluate_answer(query, answer, reference_answer, cache_dir=cache_dir)
 
 
 def main():
@@ -173,6 +174,9 @@ def main():
     if args.list_models:
         return
 
+    # Configure MLflow for local tracking
+    configure_mlflow(args.cache_dir)
+
     # Load and cache document chunks
     chunks, changed = load_and_cache_chunks(args.documents_folder, args.cache_dir)
     print(f"\nDocument chunks loaded. Changes detected: {changed}")
@@ -183,9 +187,9 @@ def main():
 
     # Run in selected mode
     if args.mode == "interactive":
-        run_interactive_mode(qa_chain)
+        run_interactive_mode(qa_chain, args.cache_dir)
     else:
-        process_auto_mode(qa_chain, args.questions_file)
+        process_auto_mode(qa_chain, args.questions_file, args.cache_dir)
 
     # Log execution time
     time_end = time.time()

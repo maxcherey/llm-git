@@ -1,7 +1,17 @@
 import pandas as pd
 import mlflow
+import os
 
-def evaluate_answer(query, answer, reference_answer=None, verbose=True, weight=1.0):
+def configure_mlflow(cache_dir=".cache"):
+    mlflow_tracking_path = os.path.join(cache_dir, "mlflow")
+    # MLflow expects a URI. For local paths, prefix with 'file://'
+    mlflow.set_tracking_uri(f"file://{os.path.abspath(mlflow_tracking_path)}")
+    print(f"MLflow tracking data will be stored in: {mlflow_tracking_path}")
+    print(f"MLflow tracking URI set to: {mlflow.get_tracking_uri()}")
+    os.environ["MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR"] = "false"
+
+
+def evaluate_answer(query, answer, reference_answer=None, verbose=True, weight=1.0, cache_dir=".cache"):
     if not reference_answer:
         return None
         
@@ -19,7 +29,7 @@ def evaluate_answer(query, answer, reference_answer=None, verbose=True, weight=1
             data=eval_data,
             targets="ground_truth",
             predictions="model_answer",
-            model_type="question-answering",
+            model_type="question-answering"
         )
         
         # Get evaluation results
