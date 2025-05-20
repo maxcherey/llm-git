@@ -45,11 +45,11 @@ def parse_arguments():
     g.add_argument('-l', '--logfile', action='store', help='log filename')
 
     g = parser.add_argument_group('Model options')
-    g.add_argument('--reasoning-model', 
+    g.add_argument('--reasoning-model',
         default="models/gemini-2.0-flash",
         help="Gemini model for reasoning/chat"
     )
-    g.add_argument('--embedding-model', 
+    g.add_argument('--embedding-model',
         default="models/embedding-001",
         help="Gemini model for embeddings"
     )
@@ -59,7 +59,7 @@ def parse_arguments():
     )
 
     g = parser.add_argument_group('Document options')
-    g.add_argument('--documents-folder',
+    g.add_argument('-d', '--documents-folder',
         default="./documents",
         help="Path to the documents folder"
     )
@@ -335,7 +335,7 @@ def run_interactive_mode(qa_chain, cache_dir, args):
             
             print(f"\nInteractive session saved to: {output_path}")
             break
-        
+
         response = qa_chain.invoke({"query": query})
         answer = response['result']
         print(f"\nAI's Answer: {answer}")
@@ -345,22 +345,22 @@ def run_interactive_mode(qa_chain, cache_dir, args):
             print(f"--- Document {i+1} ---")
             # Extract document path and try to identify section
             doc_path = doc.metadata.get('source', 'N/A')
-            
+
             # Try to extract section information
             section = "Unknown section"
             content_lines = doc.page_content.split('\n')
-            
+
             # Look for potential section headers in the first few lines
             for i, line in enumerate(content_lines[:5]):
                 # Skip empty lines
                 if not line.strip():
                     continue
-                    
+
                 # Check for markdown headers
                 if line.startswith('#'):
                     section = line.strip('# \t')
                     break
-                    
+
             print(f"    Path: {doc_path}")
             print(f"    Section: {section}\n")
 
@@ -385,7 +385,6 @@ def run_interactive_mode(qa_chain, cache_dir, args):
                 metrics = eval_results['metrics']
                 print(f"\nEvaluation metrics: {metrics}")
 
-
 def main():
     args = parse_arguments()
 
@@ -398,6 +397,11 @@ def main():
         ]
     )
     logger = logging.getLogger(__name__)
+
+    # Validate documents folder
+    if not os.path.exists(args.documents_folder) or not os.path.isdir(args.documents_folder) :
+        print(f"Documents folder {args.documents_folder} does not exist or is not a directory. See the -d or --documents-folder option. Exiting.")
+        return
 
     # List models if requested
     if args.list_models:
@@ -429,7 +433,6 @@ def main():
     print(f"\nDocument chunks loaded. Changes detected: {changed}")
     
     # Create LLM and build RAG system
-
     qa_chain = build_rag_system(args.embedding_model, api_key, chunks, llm, args.cache_dir)
 
     # Run in selected mode
