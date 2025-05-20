@@ -177,6 +177,35 @@ When running in auto mode, the tool automatically evaluates answers using MLflow
 - Readability metrics (Flesch-Kincaid grade level, ARI grade level)
 - Token count
 
+#### Questions File Format
+
+The questions file (default: `questions.json`) is a JSON file that contains an array of question objects. Each question object has the following structure:
+
+```json
+{
+    "questions": [
+        {
+            "question": "What is the primary purpose of Data Transfer Services?",
+            "reference_answer": "DTS is designed to facilitate secure and efficient data movement between systems. It provides reliable transfer mechanisms with built-in error handling and monitoring capabilities.",
+            "weight": 0.9,
+            "model_answer": "",
+            "eval_results": {}
+        }
+    ]
+}
+```
+
+Required fields:
+- `question`: The question to be asked (string)
+- `reference_answer`: The correct answer for evaluation (string)
+- `weight`: A numerical weight for the question (float, default: 1.0)
+
+Optional fields:
+- `model_answer`: Stores the model's response after processing (string)
+- `eval_results`: Stores evaluation metrics after processing (object)
+
+The tool will automatically populate the `model_answer` and `eval_results` fields when processing questions in auto mode.
+
 ## How It Works
 
 ### LLM Git Commit
