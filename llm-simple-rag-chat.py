@@ -3,12 +3,10 @@ import os
 import time
 import argparse
 import logging
-import mlflow
-import pandas as pd
-
 from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_llm
 from llm_simple_rag_chat.document_utils import load_documents, split_documents
 from llm_simple_rag_chat.rag_utils import build_rag_system
+from llm_simple_rag_chat.eval_utils import evaluate_answer
 
 exectime_internal = 0.0
 exectime_external = 0.0
@@ -102,44 +100,6 @@ def process_auto_mode(qa_chain, questions_file):
         print(f"Evaluation metrics: {metrics}")
 
     print("\nAll questions processed successfully!")
-
-def evaluate_answer(query, answer, reference_answer=None, verbose=True, weight=1.0):
-    if not reference_answer:
-        return None
-        
-    # Prepare evaluation data
-    eval_data = pd.DataFrame({
-        "inputs": [query],
-        "ground_truth": [reference_answer],
-        "model_answer": [answer],
-        "weights": [weight]
-    })
-    
-    # Run evaluation
-    with mlflow.start_run() as run:
-        evaluator = mlflow.evaluate(
-            data=eval_data,
-            targets="ground_truth",
-            predictions="model_answer",
-            model_type="question-answering",
-        )
-        
-        # Get evaluation results
-        eval_table = evaluator.tables["eval_results_table"]
-        metrics = evaluator.metrics
-        
-        if verbose:
-            print("\nEvaluation Results:")
-            print("-" * 50)
-            print(f"Exact Match Score: {metrics.get('exact_match/v1', 0.0)}")
-            print(f"Flesch-Kincaid Grade Level: {metrics.get('flesch_kincaid_grade_level/v1/mean', 0.0):.2f}")
-            print(f"ARI Grade Level: {metrics.get('ari_grade_level/v1/mean', 0.0):.2f}")
-            print("-" * 50)
-        
-        return {
-            "metrics": metrics,
-            "eval_table": eval_table
-        }
 
 def run_interactive_mode(qa_chain):
     print("\nReady to answer questions! Type 'exit' to quit.")
