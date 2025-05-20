@@ -3,53 +3,17 @@ import os
 import time
 import argparse
 import logging
-from langchain_community.vectorstores import Chroma
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
 import mlflow
 import pandas as pd
 
-
-from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_embeddings, create_llm
+from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_llm
 from llm_simple_rag_chat.document_utils import load_documents, split_documents
+from llm_simple_rag_chat.rag_utils import build_rag_system
 
 exectime_internal = 0.0
 exectime_external = 0.0
 time_start = time.time()
 
-def build_rag_system(embedding_model, api_key, chunks, llm):
-    print(f"Initializing embeddings with model: {embedding_model}")
-    
-    # Create embeddings instance
-    embeddings = create_embeddings(embedding_model, api_key)
-    
-    # Create a Chroma vector store
-    vector_store = Chroma.from_documents(chunks, embeddings)
-    print("Vector store created.")
-    
-    # Create retriever
-    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-    
-    # Define custom prompt
-    template = """Use the following pieces of context to answer the user's question.
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
-Keep the answer concise and to the point.
- 
-Context: {context}
- 
-Question: {question}
- 
-Answer:"""
-    RAG_PROMPT = PromptTemplate(template=template, input_variables=["context", "question"])
-    
-    # Build RAG chain
-    return RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": RAG_PROMPT}
-    )
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Simple chat application with RAG and answers evaluations")
@@ -90,10 +54,6 @@ def parse_arguments():
     )
 
     return parser.parse_args()
-
-
-# GenAI functions moved to genai_utils.py
-
 
 # Auto mode handler
 def process_auto_mode(qa_chain, questions_file):
