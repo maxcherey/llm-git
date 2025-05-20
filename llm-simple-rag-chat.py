@@ -43,7 +43,7 @@ def parse_arguments():
     )
 
     g = parser.add_argument_group('Document options')
-    g.add_argument('--documents-folder',
+    g.add_argument('-d', '--documents-folder',
         default="./documents",
         help="Path to the documents folder"
     )
@@ -403,7 +403,7 @@ def main():
 
     # Validate documents folder
     if not os.path.exists(args.documents_folder) or not os.path.isdir(args.documents_folder) :
-        print(f"Documents folder {args.documents_folder} does not exist or is not a directory. See the --documents-folder option. Exiting.")
+        print(f"Documents folder {args.documents_folder} does not exist or is not a directory. See the -d or --documents-folder option. Exiting.")
         return
 
     api_key, llm = create_llm(args)
