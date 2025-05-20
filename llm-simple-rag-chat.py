@@ -3,20 +3,53 @@ import os
 import time
 import argparse
 import logging
-
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredMarkdownLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 import mlflow
 import pandas as pd
 
+
 from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_embeddings, create_llm
+from llm_simple_rag_chat.document_utils import load_documents, split_documents
 
 exectime_internal = 0.0
 exectime_external = 0.0
 time_start = time.time()
+
+def build_rag_system(embedding_model, api_key, chunks, llm):
+    print(f"Initializing embeddings with model: {embedding_model}")
+    
+    # Create embeddings instance
+    embeddings = create_embeddings(embedding_model, api_key)
+    
+    # Create a Chroma vector store
+    vector_store = Chroma.from_documents(chunks, embeddings)
+    print("Vector store created.")
+    
+    # Create retriever
+    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+    
+    # Define custom prompt
+    template = """Use the following pieces of context to answer the user's question.
+If you don't know the answer, just say that you don't know, don't try to make up an answer.
+Keep the answer concise and to the point.
+ 
+Context: {context}
+ 
+Question: {question}
+ 
+Answer:"""
+    RAG_PROMPT = PromptTemplate(template=template, input_variables=["context", "question"])
+    
+    # Build RAG chain
+    return RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=True,
+        chain_type_kwargs={"prompt": RAG_PROMPT}
+    )
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Simple chat application with RAG and answers evaluations")
@@ -188,106 +221,6 @@ def run_interactive_mode(qa_chain):
         if reference_answer:
             evaluate_answer(query, answer, reference_answer)
 
-
-# create_llm function moved to genai_utils.py
-
-def load_documents(document_folder):
-    documents = []
-
-    print(f"Starting to load documents from: {document_folder}")
-
-    # Use os.walk to traverse through the main folder and all its subfolders
-    for dirpath, dirnames, filenames in os.walk(document_folder):
-        for filename in filenames:
-            file_path = os.path.join(dirpath, filename)
-            
-            # Determine the correct loader based on file extension
-            if filename.endswith(".pdf"):
-                try:
-                    loader = PyPDFLoader(file_path)
-                    loaded_docs = loader.load()
-                    if loaded_docs is not None:
-                        documents.extend(loaded_docs)
-                    print(f"Loaded PDF: {file_path}")
-                except Exception as e:
-                    print(f"Error loading PDF {file_path}: {e}")
-            elif filename.endswith(".txt"):
-                try:
-                    loader = TextLoader(file_path, encoding='utf-8') # Specify encoding for text files
-                    loaded_docs = loader.load()
-                    if loaded_docs is not None:
-                        documents.extend(loaded_docs)
-                    print(f"Loaded TXT: {file_path}")
-                except Exception as e:
-                    print(f"Error loading TXT {file_path}: {e}")
-            elif filename.endswith(".md") or filename.endswith(".markdown"):
-                try:
-                    loader = UnstructuredMarkdownLoader(file_path)
-                    loaded_docs = loader.load()
-                    if loaded_docs is not None:
-                        documents.extend(loaded_docs)
-                    print(f"Loaded Markdown: {file_path}")
-                except Exception as e:
-                    print(f"Error loading Markdown {file_path}: {e}")
-            # Add more `elif` conditions here for other document types (e.g., .docx, .html)
-            # elif filename.endswith(".docx"):
-            #     try:
-            #         from langchain_community.document_loaders import UnstructuredWordDocumentLoader
-            #         loader = UnstructuredWordDocumentLoader(file_path)
-            #         loaded_docs = loader.load()
-            #         if loaded_docs is not None:
-            #             documents.extend(loaded_docs)
-            #         print(f"Loaded DOCX: {file_path}")
-            #     except Exception as e:
-            #         print(f"Error loading DOCX {file_path}: {e}")
-            else:
-                print(f"Skipping unsupported file type: {file_path}")
-    
-    print(f"\nFinished loading. Total documents loaded: {len(documents)}")
-    return documents if documents else []
-
-def split_documents(documents, chunk_size=1000, chunk_overlap=200):
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        length_function=len,
-        is_separator_regex=False,
-    )
-    return text_splitter.split_documents(documents)
-
-def build_rag_system(embedding_model, api_key, chunks, llm):
-    print(f"Initializing embeddings with model: {embedding_model}")
-    
-    # Create embeddings instance
-    embeddings = create_embeddings(embedding_model, api_key)
-    
-    # Create a Chroma vector store
-    vector_store = Chroma.from_documents(chunks, embeddings)
-    print("Vector store created.")
-    
-    # Create retriever
-    retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-    
-    # Define custom prompt
-    template = """Use the following pieces of context to answer the user's question.
-If you don't know the answer, just say that you don't know, don't try to make up an answer.
-Keep the answer concise and to the point.
-
-Context: {context}
-
-Question: {question}
-
-Answer:"""
-    RAG_PROMPT = PromptTemplate(template=template, input_variables=["context", "question"])
-    
-    # Build RAG chain
-    return RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": RAG_PROMPT}
-    )
 
 def main():
     args = parse_arguments()
