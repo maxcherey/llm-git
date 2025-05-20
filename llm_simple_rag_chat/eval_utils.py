@@ -89,9 +89,19 @@ def analyze_evaluation_results(results_folder):
             if "categories" in data:
                 for category, category_data in data["categories"].items():
                     for question in category_data["questions"]:
-                        # Calculate normalized relevance score (0-1)
+                        # Calculate normalized relevance score using Flesch-Kincaid grade level
                         metrics = question["eval_results"]["metrics"]
-                        relevance_score = metrics.get("exact_match/v1", 0.0)
+                        # Normalize Flesch-Kincaid grade level to 0-1 range (lower is better)
+                        fk_grade = metrics.get("flesch_kincaid_grade_level/v1/mean", 12.0)  # Default to 12 if not found
+                        # Convert grade level to a score where 0-3 is excellent (1.0), 4-6 is good (0.75), 7-9 is fair (0.5), 10+ is poor (0.25)
+                        if fk_grade <= 3:
+                            relevance_score = 1.0
+                        elif fk_grade <= 6:
+                            relevance_score = 0.75
+                        elif fk_grade <= 9:
+                            relevance_score = 0.5
+                        else:
+                            relevance_score = 0.25
                         
                         # Add to category statistics
                         file_stats[category]["total_weight"] += question["weight"]
@@ -99,7 +109,8 @@ def analyze_evaluation_results(results_folder):
                         file_stats[category]["questions"].append({
                             "question": question["question"],
                             "score": relevance_score,
-                            "weight": question["weight"]
+                            "weight": question["weight"],
+                            "fk_grade": fk_grade
                         })
                         
                         file_scores.append(relevance_score)
