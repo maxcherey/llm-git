@@ -4,16 +4,33 @@ import time
 import argparse
 import logging
 import json
-from datetime import datetime
 from pathlib import Path
+import pandas as pd
+from collections import defaultdict
+from datetime import datetime
+
+from llm_simple_rag_chat.document_utils import (
+    load_and_cache_chunks
+)
+
+from llm_simple_rag_chat.rag_utils import (
+    build_rag_system
+)
+
+from llm_simple_rag_chat.genai_utils import (
+    setup_genai_environment,
+    validate_model,
+    create_llm
+)
+
+from llm_simple_rag_chat.eval_utils import (
+    analyze_evaluation_results,
+    evaluate_answer,
+    configure_mlflow
+)
 
 # Suppress TensorFlow and XLA logs
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-from llm_simple_rag_chat.genai_utils import setup_genai_environment, validate_model, create_llm
-from llm_simple_rag_chat.document_utils import load_and_cache_chunks, load_documents, split_documents
-from llm_simple_rag_chat.rag_utils import build_rag_system
-from llm_simple_rag_chat.eval_utils import evaluate_answer, configure_mlflow
 
 exectime_internal = 0.0
 exectime_external = 0.0
@@ -45,6 +62,16 @@ def parse_arguments():
     g.add_argument('--documents-folder',
         default="./documents",
         help="Path to the documents folder"
+    )
+
+    g = parser.add_argument_group('Evaluation options')
+    g.add_argument('--analyze-results',
+        action="store_true",
+        help="Analyze existing evaluation results and print summary statistics"
+    )
+    g.add_argument('--results-folder',
+        default=".results",
+        help="Path to the folder containing evaluation results"
     )
 
     g = parser.add_argument_group('Mode options')
@@ -155,6 +182,143 @@ def initialize_result_file(args, source_file=None):
     return output_path, output_data
 
 
+def analyze_evaluation_results(results_folder):
+    """
+    Analyze evaluation results from the results folder and print statistics per file.
+    """
+    import json
+    from pathlib import Path
+    import pandas as pd
+    from collections import defaultdict
+
+    results_dir = Path(results_folder)
+    if not results_dir.exists():
+        print(f"Error: Results directory {results_dir} does not exist")
+        return
+
+    # Process each result file
+    for result_file in sorted(results_dir.glob("*.json")):
+        try:
+            with open(result_file, 'r') as f:
+                data = json.load(f)
+
+            # Get file metadata
+            timestamp = data["metadata"]["timestamp"]
+            model = data["metadata"]["model"]
+            mode = data["metadata"]["mode"]
+            source_file = data["metadata"].get("source_file", "N/A")
+
+            print(f"\n=== Results for {result_file.name} ===")
+            print(f"Timestamp: {timestamp}")
+            print(f"Model: {model}")
+            print(f"Mode: {mode}")
+            print(f"Source file: {source_file}")
+
+            # Initialize statistics for this file
+            file_stats = defaultdict(lambda: {"total_weight": 0, "total_score": 0, "questions": []})
+            file_scores = []
+
+            # Process auto mode results
+            if "categories" in data:
+                for category, category_data in data["categories"].items():
+                    for question in category_data["questions"]:
+                        # Calculate normalized relevance score (0-1)
+                        metrics = question["eval_results"]["metrics"]
+                        relevance_score = metrics.get("exact_match/v1", 0.0)
+                        
+                        # Add to category statistics
+                        file_stats[category]["total_weight"] += question["weight"]
+                        file_stats[category]["total_score"] += relevance_score * question["weight"]
+                        file_stats[category]["questions"].append({
+                            "question": question["question"],
+                            "score": relevance_score,
+                            "weight": question["weight"]
+                        })
+                        
+                        file_scores.append(relevance_score)
+
+            # Process interactive mode results
+            elif "questions" in data:
+                for question in data["questions"]:
+                    metrics = question["eval_results"]["metrics"]
+                    relevance_score = metrics.get("exact_match/v1", 0.0)
+                    
+                    file_stats["Interactive"]["total_weight"] += 1.0  # Interactive mode uses equal weights
+                    file_stats["Interactive"]["total_score"] += relevance_score
+                    file_stats["Interactive"]["questions"].append({
+                        "question": question["question"],
+                        "score": relevance_score,
+                        "weight": 1.0
+                    })
+                    
+                    file_scores.append(relevance_score)
+
+            # Print file-level statistics
+            print("\n=== File Statistics ===")
+            print(f"Total questions: {sum(len(v["questions"]) for v in file_stats.values())}")
+            print(f"Average score: {sum(file_scores)/len(file_scores):.3f}")
+
+            # Create DataFrame for file-level statistics
+            file_df = pd.DataFrame({
+                "Category": [],
+                "Questions": [],
+                "Average Score": [],
+                "Weighted Score": []
+            })
+
+            # Print per-category statistics for this file
+            for category, stats in file_stats.items():
+                if stats["total_weight"] == 0:
+                    continue
+
+                avg_score = stats["total_score"] / len(stats["questions"])
+                weighted_score = stats["total_score"] / stats["total_weight"]
+
+                # Add to DataFrame
+                file_df = pd.concat([
+                    file_df,
+                    pd.DataFrame({
+                        "Category": [category],
+                        "Questions": [len(stats["questions"])],
+                        "Average Score": [avg_score],
+                        "Weighted Score": [weighted_score]
+                    })
+                ], ignore_index=True)
+
+                # Print detailed category information
+                print(f"\nCategory: {category}")
+                print(f"Questions evaluated: {len(stats['questions'])}")
+                print(f"Average score: {avg_score:.3f}")
+                print(f"Weighted score: {weighted_score:.3f}")
+
+            # Print file-level statistics table
+            print("\n=== Detailed Statistics by Category ===")
+            print(file_df.to_string(index=False))
+
+            # Print score distribution for this file
+            if file_scores:
+                score_series = pd.Series(file_scores)
+                
+                # Create bins manually
+                bins = [0, 0.25, 0.5, 0.75, 1.0]
+                labels = ['0-25%', '25-50%', '50-75%', '75-100%']
+                
+                # Count scores in each bin
+                binned_scores = pd.cut(score_series, bins=bins, labels=labels)
+                bin_counts = binned_scores.value_counts()
+                
+                # Calculate percentages
+                total_scores = len(file_scores)
+                bin_percentages = (bin_counts / total_scores) * 100
+                
+                print("\n=== Score Distribution ===")
+                print(bin_percentages.to_string())
+
+        except Exception as e:
+            print(f"Error processing {result_file}: {str(e)}")
+            continue
+
+
 def run_interactive_mode(qa_chain, cache_dir, args):
     print("\nReady to answer questions! Type 'exit' to quit.")
     
@@ -224,30 +388,40 @@ def run_interactive_mode(qa_chain, cache_dir, args):
 
 def main():
     args = parse_arguments()
-    
+
+    # Set up logging
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(args.logfile) if args.logfile else logging.StreamHandler()
+        ]
+    )
+    logger = logging.getLogger(__name__)
+
+    # List models if requested
+    if args.list_models:
+        setup_genai_environment()
+        validate_model(args.embedding_model)
+        return
+
+    # Analyze results if requested
+    if args.analyze_results:
+        from llm_simple_rag_chat.eval_utils import analyze_evaluation_results
+        analyze_evaluation_results(args.results_folder)
+        return
+
     # Ensure cache directory exists
     cache_dir = Path(args.cache_dir)
     if not cache_dir.exists():
         cache_dir.mkdir(parents=True, exist_ok=True)
         print(f"Created cache directory at: {cache_dir}")
-    
-    # Set up logging
-    if args.verbose is None:
-        level = logging.WARNING
-    else:
-        level = logging.DEBUG if args.verbose > 1 else logging.INFO
-    logging.basicConfig(level=level, format="%(asctime)s - %(levelname)6s - %(message)s")
 
     # Setup Google Generative AI environment
     setup_genai_environment()
-
     api_key, llm = create_llm(args)
 
-    # If list models flag is set, exit after listing models
-    if args.list_models:
-        return
-
-    # Configure MLflow for local tracking
+    # Configure MLflow
     configure_mlflow(args.cache_dir)
 
     # Load and cache document chunks
