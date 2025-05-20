@@ -3,6 +3,7 @@ import os
 import time
 import argparse
 import logging
+import json
 
 from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredMarkdownLoader
@@ -114,8 +115,6 @@ def create_embeddings(model_name, api_key=None):
 
 # Auto mode handler
 def process_auto_mode(qa_chain, questions_file):
-    import json
-
     # Load questions from JSON file
     with open(questions_file, 'r') as f:
         data = json.load(f)
