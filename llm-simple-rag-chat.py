@@ -24,9 +24,12 @@ from llm_simple_rag_chat.genai_utils import (
 )
 
 from llm_simple_rag_chat.eval_utils import (
-    analyze_evaluation_results,
     evaluate_answer,
     configure_mlflow
+)
+
+from llm_simple_rag_chat.results_analysis import (
+    analyze_evaluation_results
 )
 
 # Suppress TensorFlow and XLA logs
