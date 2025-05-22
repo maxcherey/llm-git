@@ -102,14 +102,19 @@ Generic Options:
 Model Options:
 - `--reasoning-model`: Gemini model for reasoning/chat (default: models/gemini-2.0-flash)
 - `--embedding-model`: Gemini model for embeddings (default: models/embedding-001)
-- `--list-models`: List available Google models and exit
+- `--list-models`: List available Google models and exit (useful for validating API token and selecting models)
 
 Document Options:
 - `--documents-folder`: Path to the documents folder (default: ./documents)
 
+Evaluation Options:
+- `--analyze-results`: Analyze existing evaluation results and print summary statistics
+- `--results-folder`: Path to the folder containing evaluation results (default: .results)
+
 Mode Options:
 - `--mode`: Mode of operation (choices: interactive, auto, default: interactive)
 - `--questions-file`: Path to the questions JSON file (default: questions.json)
+- `--cache-dir`: Directory to store cached artifacts and data (default: .cache)
 
 #### Installation
 
@@ -172,26 +177,46 @@ python ./llm-simple-rag-chat.py --list-models
 
 #### Answer Evaluation
 
-When running in auto mode, the tool automatically evaluates answers using MLflow metrics, comparing the model's response to reference answers. Evaluation results are stored in the questions file and include:
+The tool provides answer evaluation in both interactive and auto modes using MLflow metrics. Evaluation results include:
 - Exact match score
 - Readability metrics (Flesch-Kincaid grade level, ARI grade level)
 - Token count
 
+In interactive mode, you can provide reference answers after each question, and the tool will evaluate the response immediately. In auto mode, the tool automatically evaluates answers against pre-defined reference answers from the questions file.
+
+All evaluation results are stored in the `.results` folder, organized by timestamp and model. Each result file contains detailed metrics for every question, including:
+- Per-category statistics
+- Score distributions
+- Readability metrics
+- Token usage
+
+You can analyze these results later using the `--analyze-results` option to get average scores per result file and per question category. For example:
+
+```bash
+# Analyze all evaluation results
+python ./llm-simple-rag-chat.py --analyze-results
+
+# Analyze results from a specific folder
+python ./llm-simple-rag-chat.py --analyze-results --results-folder /path/to/results
+```
+
 #### Questions File Format
 
-The questions file (default: `questions.json`) is a JSON file that contains an array of question objects. Each question object has the following structure:
+The questions file (default: `questions.json`) is a JSON file that organizes questions into categories. Each category can contain multiple questions. The structure is as follows:
 
 ```json
 {
-    "questions": [
-        {
-            "question": "What is the primary purpose of Data Transfer Services?",
-            "reference_answer": "DTS is designed to facilitate secure and efficient data movement between systems. It provides reliable transfer mechanisms with built-in error handling and monitoring capabilities.",
-            "weight": 0.9,
-            "model_answer": "",
-            "eval_results": {}
+    "categories": {
+        "CategoryName": {
+            "questions": [
+                {
+                    "question": "What is the primary purpose of Data Transfer Services?",
+                    "reference_answer": "DTS is designed to facilitate secure and efficient data movement between systems. It provides reliable transfer mechanisms with built-in error handling and monitoring capabilities.",
+                    "weight": 0.9
+                }
+            ]
         }
-    ]
+    }
 }
 ```
 
@@ -199,12 +224,6 @@ Required fields:
 - `question`: The question to be asked (string)
 - `reference_answer`: The correct answer for evaluation (string)
 - `weight`: A numerical weight for the question (float, default: 1.0)
-
-Optional fields:
-- `model_answer`: Stores the model's response after processing (string)
-- `eval_results`: Stores evaluation metrics after processing (object)
-
-The tool will automatically populate the `model_answer` and `eval_results` fields when processing questions in auto mode.
 
 ## How It Works
 

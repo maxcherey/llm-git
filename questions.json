@@ -1,45 +1,13 @@
 {
-  "questions": [
-    {
-      "category": "General",
-      "question": "What is the capital of France?",
-      "reference_answer": "Paris",
-      "weight": 0.9,
-      "model_answer": "I'm sorry, but the answer to your question is not in the context provided. The context is about Functions Domain, Usages Domain, Static Content & Localization Domain.",
-      "eval_results": {
-        "metrics": {
-          "flesch_kincaid_grade_level/v1/mean": 10.356923076923078,
-          "flesch_kincaid_grade_level/v1/variance": 0.0,
-          "flesch_kincaid_grade_level/v1/p90": 10.356923076923078,
-          "ari_grade_level/v1/mean": 9.492222222222221,
-          "ari_grade_level/v1/variance": 0.0,
-          "ari_grade_level/v1/p90": 9.492222222222221,
-          "exact_match/v1": 0.0
-        },
-        "eval_table": {
-          "inputs": {
-            "0": "What is the capital of France?"
-          },
-          "weights": {
-            "0": 0.9
-          },
-          "ground_truth": {
-            "0": "Paris"
-          },
-          "model_answer": {
-            "0": "I'm sorry, but the answer to your question is not in the context provided. The context is about Functions Domain, Usages Domain, Static Content & Localization Domain."
-          },
-          "token_count": {
-            "0": 34
-          },
-          "flesch_kincaid_grade_level/v1/score": {
-            "0": 10.3569230769
-          },
-          "ari_grade_level/v1/score": {
-            "0": 9.4922222222
-          }
+  "categories": {
+    "General": {
+      "questions": [
+        {
+          "question": "What is the capital of France?",
+          "reference_answer": "Paris",
+          "weight": 0.9
         }
-      }
+      ]
     }
-  ]
+  }
 }
