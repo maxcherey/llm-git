@@ -8,3 +8,7 @@ google.generativeai
 mlflow
 chromadb
 unstructured
+langchain_chroma
+langchain_huggingface
+tiktoken
+openai
