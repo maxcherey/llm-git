@@ -89,12 +89,12 @@ def evaluate_answer(query, answer, reference_answer=None, source_documents=None,
             print("-" * 50)
             print(f"Exact Match Score: {metrics.get('exact_match/v1', 0.0)}")
             if llm_as_a_judge:
-                print(f"Answer Similarity Score: {metrics.get('answer_similarity/v1', 0.0)}")
-                print(f"Answer Correctness Score: {metrics.get('answer_correctness/v1', 0.0)}")
-                print(f"Answer Relevance Score: {metrics.get('answer_relevance/v1', 0.0)}")
+                print(f"Answer Similarity Score: {metrics.get('answer_similarity/v1/mean', 0.0)}")
+                print(f"Answer Correctness Score: {metrics.get('answer_correctness/v1/mean', 0.0)}")
+                print(f"Answer Relevance Score: {metrics.get('answer_relevance/v1/mean', 0.0)}")
                 if source_documents:
-                    print(f"Relevance Score: {metrics.get('relevance/v1', 0.0)}")
-                    print(f"Faithfulness Score: {metrics.get('faithfulness/v1', 0.0)}")
+                    print(f"Relevance Score: {metrics.get('relevance/v1/mean', 0.0)}")
+                    print(f"Faithfulness Score: {metrics.get('faithfulness/v1/mean', 0.0)}")
             print(f"Flesch-Kincaid Grade Level: {metrics.get('flesch_kincaid_grade_level/v1/mean', 0.0):.2f}")
             print(f"ARI Grade Level: {metrics.get('ari_grade_level/v1/mean', 0.0):.2f}")
             print("-" * 50)
