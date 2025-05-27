@@ -110,6 +110,9 @@ Document Options:
 Evaluation Options:
 - `--analyze-results`: Analyze existing evaluation results and print summary statistics
 - `--results-folder`: Path to the folder containing evaluation results (default: .results)
+- `--llm-as-a-judge`: Use LLM-based metrics for answer evaluation
+- `--ollama-address`: Address of the Ollama server (default: http://localhost:11434)
+- `--ollama-model`: Model name to use for Ollama-based evaluations (default: qwen3:8b)
 
 Mode Options:
 - `--mode`: Mode of operation (choices: interactive, auto, default: interactive)
@@ -170,6 +173,11 @@ Using HuggingFace embeddings:
 python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --embedding-model all-MiniLM-L6-v2
 ```
 
+Using LLM-as-a-judge with custom Ollama configuration:
+```bash
+python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --llm-as-a-judge --ollama-address http://localhost:11434 --ollama-model mistral:7b
+```
+
 List available Google models:
 ```bash
 python ./llm-simple-rag-chat.py --list-models
@@ -181,6 +189,13 @@ The tool provides answer evaluation in both interactive and auto modes using MLf
 - Exact match score
 - Readability metrics (Flesch-Kincaid grade level, ARI grade level)
 - Token count
+
+When using `--llm-as-a-judge` option, the tool leverages Ollama models to perform additional LLM-based evaluations:
+- Answer similarity: How similar the response is to the reference answer
+- Answer correctness: How factually correct the response is
+- Answer relevance: How relevant the response is to the question
+- Relevance: How relevant the source documents are (if provided)
+- Faithfulness: How faithful the answer is to the source documents (if provided)
 
 In interactive mode, you can provide reference answers after each question, and the tool will evaluate the response immediately. In auto mode, the tool automatically evaluates answers against pre-defined reference answers from the questions file.
 
