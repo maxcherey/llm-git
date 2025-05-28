@@ -76,6 +76,18 @@ def parse_arguments():
         default=".results",
         help="Path to the folder containing evaluation results"
     )
+    g.add_argument('--llm-as-a-judge',
+        action="store_true",
+        help="Use LLM-based metrics for answer evaluation"
+    )
+    g.add_argument('--ollama-address',
+        default="http://localhost:11434",
+        help="Address of the Ollama server"
+    )
+    g.add_argument('--ollama-model',
+        default="qwen3:8b",
+        help="Model name to use for Ollama-based evaluations"
+    )
 
     g = parser.add_argument_group('Mode options')
     g.add_argument('--mode',
@@ -122,9 +134,12 @@ def process_auto_mode(qa_chain, questions_file, cache_dir, args):
                 question_data['question'],
                 answer,
                 question_data['reference_answer'],
+                source_documents=response['source_documents'],
                 verbose=False,  # Don't print results in auto mode
                 weight=question_data['weight'],
-                cache_dir=cache_dir
+                cache_dir=cache_dir,
+                llm_as_a_judge=args.llm_as_a_judge,
+                model_name=args.ollama_model
             )
             
             # Create output question data
@@ -233,7 +248,15 @@ def run_interactive_mode(qa_chain, cache_dir, args):
         # Get reference answer for evaluation
         reference_answer = input("\nPlease provide the reference answer for evaluation (or press Enter to skip): ")
         if reference_answer:
-            eval_results = evaluate_answer(query, answer, reference_answer, cache_dir=cache_dir)
+            eval_results = evaluate_answer(
+                query, 
+                answer, 
+                reference_answer, 
+                source_documents=response['source_documents'],
+                cache_dir=cache_dir,
+                llm_as_a_judge=args.llm_as_a_judge,
+                model_name=args.ollama_model
+            )
             
             # Add question data to session
             session_data['questions'].append({
@@ -291,7 +314,7 @@ def main():
     api_key, llm = create_llm(args)
 
     # Configure MLflow
-    configure_mlflow(args.cache_dir)
+    configure_mlflow(args.cache_dir, llm_as_a_judge=args.llm_as_a_judge, ollama_address=args.ollama_address)
 
     # Load and cache document chunks
     chunks, changed = load_and_cache_chunks(args.documents_folder, args.cache_dir)
