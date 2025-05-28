@@ -111,12 +111,12 @@ def evaluate_answers(questions: List[Dict], verbose: bool = True, cache_dir: str
             print("-" * 50)
             print(f"Exact Match Score: {metrics.get('exact_match/v1', 0.0)}")
             if llm_as_a_judge:
-                print(f"Answer Similarity Score: {metrics.get('answer_similarity/v1/mean', 0.0)}")
-                print(f"Answer Correctness Score: {metrics.get('answer_correctness/v1/mean', 0.0)}")
-                print(f"Answer Relevance Score: {metrics.get('answer_relevance/v1/mean', 0.0)}")
+                print(f"Answer Similarity Score Mean: {metrics.get('answer_similarity/v1/mean', 0.0)}")
+                print(f"Answer Correctness Score Mean: {metrics.get('answer_correctness/v1/mean', 0.0)}")
+                print(f"Answer Relevance Score Mean: {metrics.get('answer_relevance/v1/mean', 0.0)}")
                 if 'context' in eval_data.columns:
-                    print(f"Relevance Score: {metrics.get('relevance/v1/mean', 0.0)}")
-                    print(f"Faithfulness Score: {metrics.get('faithfulness/v1/mean', 0.0)}")
+                    print(f"Relevance Score Mean: {metrics.get('relevance/v1/mean', 0.0)}")
+                    print(f"Faithfulness Score Mean: {metrics.get('faithfulness/v1/mean', 0.0)}")
             print(f"Flesch-Kincaid Grade Level: {metrics.get('flesch_kincaid_grade_level/v1/mean', 0.0):.2f}")
             print(f"ARI Grade Level: {metrics.get('ari_grade_level/v1/mean', 0.0):.2f}")
             print("-" * 50)
