@@ -24,7 +24,7 @@ from llm_simple_rag_chat.genai_utils import (
 )
 
 from llm_simple_rag_chat.eval_utils import (
-    evaluate_answer,
+    evaluate_answers,
     configure_mlflow
 )
 
@@ -129,14 +129,19 @@ def process_auto_mode(qa_chain, questions_file, cache_dir, args):
             response = qa_chain.invoke({"query": question_data['question']})
             answer = response['result']
             
+            # Create single question for evaluation
+            question = [{
+                'question': question_data['question'],
+                'answer': answer,
+                'reference_answer': question_data['reference_answer'],
+                'source_documents': response['source_documents'],
+                'weight': question_data['weight'],
+            }]
+
             # Run evaluation with cache directory
-            eval_results = evaluate_answer(
-                question_data['question'],
-                answer,
-                question_data['reference_answer'],
-                source_documents=response['source_documents'],
+            eval_results = evaluate_answers(
+                question,
                 verbose=False,  # Don't print results in auto mode
-                weight=question_data['weight'],
                 cache_dir=cache_dir,
                 llm_as_a_judge=args.llm_as_a_judge,
                 model_name=args.ollama_model
@@ -248,11 +253,16 @@ def run_interactive_mode(qa_chain, cache_dir, args):
         # Get reference answer for evaluation
         reference_answer = input("\nPlease provide the reference answer for evaluation (or press Enter to skip): ")
         if reference_answer:
-            eval_results = evaluate_answer(
-                query, 
-                answer, 
-                reference_answer, 
-                source_documents=response['source_documents'],
+            # Create single question for evaluation
+            question = [{
+                'question': query,
+                'answer': answer,
+                'reference_answer': reference_answer,
+                'source_documents': response['source_documents'],
+            }]
+
+            eval_results = evaluate_answers(
+                questions=question,
                 cache_dir=cache_dir,
                 llm_as_a_judge=args.llm_as_a_judge,
                 model_name=args.ollama_model
