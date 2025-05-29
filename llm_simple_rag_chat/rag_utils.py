@@ -1,6 +1,8 @@
 import os
 import json
 import hashlib
+import operator
+from pydantic import Field
 from langchain_chroma import Chroma
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
@@ -10,6 +12,21 @@ from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import CrossEncoderReranker
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 from llm_simple_rag_chat.genai_utils import create_embeddings
+from langchain_core.runnables import chain
+
+class ScoredCrossEncoderReranker(CrossEncoderReranker):
+    score_threshold: float | None = Field(default=None)
+
+    def compress_documents(self, documents, query, callbacks = None):
+        scores = self.model.score([(query, doc.page_content) for doc in documents])
+        docs_with_scores = list(zip(documents, scores))
+        result = sorted(docs_with_scores, key=operator.itemgetter(1), reverse=True)
+        out = []
+        for doc, score in result[: self.top_n]:
+            if self.score_threshold is None or score >= self.score_threshold:
+                doc.metadata['reranker_score'] = score
+                out.append(doc)
+        return out
 
 def get_cached_vector_store(embedding_model, chunks, embeddings, cache_dir):
     vector_store_path = os.path.join(cache_dir, f"vector_store_{embedding_model}")
@@ -62,6 +79,7 @@ def build_rag_system(
     use_document_reranker: bool,
     hf_document_reranker_model: str,
     document_reranker_top_n: int,
+    document_reranker_score_threshold: float,
     api_key,
     chunks,
     llm,
@@ -75,7 +93,14 @@ def build_rag_system(
     # Get or create vector store
     vector_store = get_cached_vector_store(embedding_model, chunks, embeddings, cache_dir)
 
-    retrievers = [vector_store.as_retriever(search_kwargs={"k": embeddings_top_k})]
+    @chain
+    def vector_retriever(query: str):
+        docs, scores = zip(*vector_store.similarity_search_with_score(query, embeddings_top_k))
+        for doc, score in zip(docs, scores):
+            doc.metadata["similarity_score"] = score
+        return docs
+
+    retrievers = [vector_retriever]
     # TODO: Configurable weights for retrievers
     weights = [0.25]
     if use_bm25_reranker:
@@ -92,7 +117,7 @@ def build_rag_system(
     if use_document_reranker:
         print('Using document reranker:', hf_document_reranker_model, 'with top_n:', document_reranker_top_n)
         model = HuggingFaceCrossEncoder(model_name=hf_document_reranker_model, model_kwargs={'device': 'cpu'})
-        compressor = CrossEncoderReranker(model=model, top_n=document_reranker_top_n)
+        compressor = ScoredCrossEncoderReranker(score_threshold=document_reranker_score_threshold, model=model, top_n=document_reranker_top_n)
         retriever = ContextualCompressionRetriever(
             base_compressor=compressor, base_retriever=base_retriever
         )

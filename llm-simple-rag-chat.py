@@ -125,6 +125,7 @@ def parse_arguments():
     g.add_argument('--use-document-reranker', action='store_true', help='Enable document reranking with cross-encoder model', default=False)
     g.add_argument('--hf-document-reranker-model', help='Name of the document reranker model that will be loaded from HuggingFace', default='cross-encoder/ms-marco-MiniLM-L6-v2')
     g.add_argument('--document-reranker-top-n', type=int, help='Number of documents that reranker model should keep', default=10)
+    g.add_argument('--document-reranker-score-threshold', type=float, help='Filter reranker results by score threshold. Note that the score scale depends on the model and may range from -10 to 10.', default=None)
 
     return parser.parse_args()
 
@@ -266,23 +267,14 @@ def run_interactive_mode(qa_chain, cache_dir, args):
             # Extract document path and try to identify section
             doc_path = doc.metadata.get('source', 'N/A')
 
-            # Try to extract section information
-            section = "Unknown section"
-            content_lines = doc.page_content.split('\n')
-
-            # Look for potential section headers in the first few lines
-            for i, line in enumerate(content_lines[:5]):
-                # Skip empty lines
-                if not line.strip():
-                    continue
-
-                # Check for markdown headers
-                if line.startswith('#'):
-                    section = line.strip('# \t')
-                    break
-
+            char_limit = min(len(doc.page_content), 150)  # Limit excerpt to 150 characters
+            excerpt = doc.page_content[:char_limit].encode('unicode_escape').decode('utf-8')
+            similarity_score = doc.metadata.get('similarity_score', 'N/A')
+            reranker_score = doc.metadata.get('reranker_score', 'N/A')
             print(f"    Path: {doc_path}")
-            print(f"    Section: {section}\n")
+            print(f"    Excerpt: {excerpt}...")
+            print(f"    Similarity score: {similarity_score}")
+            print(f"    Relevance score: {reranker_score}\n")
 
         # Get reference answer for evaluation
         reference_answer = input("\nPlease provide the reference answer for evaluation (or press Enter to skip): ")
@@ -373,6 +365,7 @@ def main():
         args.use_document_reranker,
         args.hf_document_reranker_model,
         args.document_reranker_top_n,
+        args.document_reranker_score_threshold,
         api_key,
         chunks,
         llm,
