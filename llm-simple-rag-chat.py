@@ -60,6 +60,18 @@ def parse_arguments():
         action="store_true",
         help="List available Google models and exit (useful for validating API token and selecting models)"
     )
+    g.add_argument('--temperature', type=float, default=0.1,
+        help="Model temperature for controlling randomness in responses (0.0 = deterministic, 2.0 = more random)"
+    )
+    g.add_argument('--n-tokens', type=int, default=1024,
+        help="Maximum number of tokens for model responses"
+    )
+    g.add_argument('--top-p', type=float, default=0.95,
+        help="Top-p sampling parameter for controlling diversity of responses (0.0 = deterministic, 1.0 = more diverse)"
+    )
+    g.add_argument('--top-k', type=int, default=20,
+        help="Top-k sampling parameter for controlling diversity of responses (0 = no top-k)"
+    )
 
     g = parser.add_argument_group('Document options')
     g.add_argument('-d', '--documents-folder',
