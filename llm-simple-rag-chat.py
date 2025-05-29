@@ -123,7 +123,7 @@ def parse_arguments():
     g.add_argument('--use-bm25-reranker', action='store_true', help='Enable BM25 (keyword-based) reranking', default=False)
     g.add_argument('--bm25-top-k', type=int, help='Number of BM25 candidates to retrieve', default=25)
     g.add_argument('--use-document-reranker', action='store_true', help='Enable document reranking with cross-encoder model', default=False)
-    g.add_argument('--hf-document-reranker-model', help='Name of the document reranker model that will be loaded from HuggingFace', default='BAAI/bge-reranker-v2-m3')
+    g.add_argument('--hf-document-reranker-model', help='Name of the document reranker model that will be loaded from HuggingFace', default='cross-encoder/ms-marco-MiniLM-L6-v2')
     g.add_argument('--document-reranker-top-n', type=int, help='Number of documents that reranker model should keep', default=10)
 
     return parser.parse_args()
