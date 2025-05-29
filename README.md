@@ -103,9 +103,13 @@ Model Options:
 - `--reasoning-model`: Gemini model for reasoning/chat (default: models/gemini-2.0-flash)
 - `--embedding-model`: Gemini model for embeddings (default: models/embedding-001)
 - `--list-models`: List available Google models and exit (useful for validating API token and selecting models)
+- `--temperature`: Model temperature for controlling randomness in responses (default: 0.1)
+- `--n-tokens`: Maximum number of tokens for model responses (default: 1024)
+- `--top-p`: Top-p sampling parameter for controlling diversity of responses (default: 0.95)
+- `--top-k`: Top-k sampling parameter for controlling diversity of responses (default: 20)
 
 Document Options:
-- `--documents-folder`: Path to the documents folder (default: ./documents)
+- `-d, --documents-folder`: Path to the documents folder (default: ./documents)
 
 Evaluation Options:
 - `--analyze-results`: Analyze existing evaluation results and print summary statistics
@@ -118,6 +122,16 @@ Mode Options:
 - `--mode`: Mode of operation (choices: interactive, auto, default: interactive)
 - `--questions-file`: Path to the questions JSON file (default: questions.json)
 - `--cache-dir`: Directory to store cached artifacts and data (default: .cache)
+
+General RAG Options:
+- `--embeddings-top-k`: Number of vector search candidates to retrieve (default: 50)
+
+Hybrid RAG Options:
+- `--use-bm25-reranker`: Enable BM25 (keyword-based) reranking
+- `--bm25-top-k`: Number of BM25 candidates to retrieve (default: 25)
+- `--use-document-reranker`: Enable document reranking with cross-encoder model
+- `--hf-document-reranker-model`: Name of the document reranker model from HuggingFace (default: cross-encoder/ms-marco-MiniLM-L6-v2)
+- `--document-reranker-top-n`: Number of documents that reranker model should keep (default: 10)
 
 #### Installation
 
