@@ -102,12 +102,11 @@ def build_rag_system(
     # Define custom prompt
     template = """Use the following pieces of context to answer the user's question.
 If you don't know the answer, just say that you don't know, don't try to make up an answer.
-Keep the answer concise and to the point.
- 
+
 Context: {context}
- 
+
 Question: {question}
- 
+
 Answer:"""
     RAG_PROMPT = PromptTemplate(template=template, input_variables=["context", "question"])
     
