@@ -2,6 +2,7 @@ import pandas as pd
 import mlflow
 import os
 import requests
+from typing import List, Dict, Optional
 from mlflow.metrics.genai import answer_similarity, answer_correctness, answer_relevance, relevance, faithfulness
 
 def configure_mlflow(cache_dir=".cache", llm_as_a_judge=False, ollama_address="http://localhost:11434"):
@@ -26,23 +27,44 @@ def configure_mlflow(cache_dir=".cache", llm_as_a_judge=False, ollama_address="h
         except requests.exceptions.ConnectionError:
             raise Exception(f"Cannot connect to Ollama. Please ensure Ollama is running on {ollama_address}")
 
-def evaluate_answer(query, answer, reference_answer=None, source_documents=None, verbose=True, weight=1.0, cache_dir=".cache", llm_as_a_judge=False, model_name="qwen3:8b"):
-    if not reference_answer:
-        return None
+def evaluate_answers(questions: List[Dict], verbose: bool = True, cache_dir: str = ".cache", 
+                    llm_as_a_judge: bool = False, model_name: str = "qwen3:8b") -> Dict:
+    """
+    Evaluate multiple question-answer pairs in batch.
+
+    Args:
+        questions: List of dictionaries containing:
+            - question: The input question
+            - answer: The model's answer to evaluate
+            - reference_answer: The ground truth answer
+            - weight: Optional weight for the evaluation (defaults to 1.0)
+            - source_documents: Optional list of source documents
+        verbose: Whether to print evaluation results
+        cache_dir: Directory for caching
+        llm_as_a_judge: Whether to use LLM for evaluation
+        model_name: Name of the model to use for evaluation
         
+    Returns:
+        Dictionary containing evaluation metrics and results table
+    """
     # Prepare evaluation data
     eval_data = pd.DataFrame({
-        "inputs": [query],
-        "ground_truth": [reference_answer],
-        "model_answer": [answer],
-        "weights": [weight]
+        "inputs": [q['question'] for q in questions],
+        "model_answer": [q['answer'] for q in questions],
+        "ground_truth": [q['reference_answer'] for q in questions],
+        "weights": [q.get('weight', 1.0) for q in questions]
     })
 
     # Add source documents if provided
-    if source_documents:
-        # Combine all document contents into a single context string
-        context = "\n".join([doc.page_content for doc in source_documents])
-        eval_data["context"] = [context]
+    if any('source_documents' in q for q in questions):
+        contexts = []
+        for q in questions:
+            if 'source_documents' in q and q['source_documents']:
+                context = "\n".join([doc.page_content for doc in q['source_documents']])
+            else:
+                context = ""
+            contexts.append(context)
+        eval_data["context"] = contexts
 
     def create_metric_config(metric_func):
         """Helper function to create metric configuration with common parameters."""
@@ -64,7 +86,7 @@ def evaluate_answer(query, answer, reference_answer=None, source_documents=None,
             create_metric_config(answer_correctness),
             create_metric_config(answer_relevance),
         ])
-        if source_documents:
+        if 'context' in eval_data.columns:
             extra_metrics.extend([
                 create_metric_config(relevance),
                 create_metric_config(faithfulness),
@@ -89,12 +111,12 @@ def evaluate_answer(query, answer, reference_answer=None, source_documents=None,
             print("-" * 50)
             print(f"Exact Match Score: {metrics.get('exact_match/v1', 0.0)}")
             if llm_as_a_judge:
-                print(f"Answer Similarity Score: {metrics.get('answer_similarity/v1/mean', 0.0)}")
-                print(f"Answer Correctness Score: {metrics.get('answer_correctness/v1/mean', 0.0)}")
-                print(f"Answer Relevance Score: {metrics.get('answer_relevance/v1/mean', 0.0)}")
-                if source_documents:
-                    print(f"Relevance Score: {metrics.get('relevance/v1/mean', 0.0)}")
-                    print(f"Faithfulness Score: {metrics.get('faithfulness/v1/mean', 0.0)}")
+                print(f"Answer Similarity Score Mean: {metrics.get('answer_similarity/v1/mean', 0.0)}")
+                print(f"Answer Correctness Score Mean: {metrics.get('answer_correctness/v1/mean', 0.0)}")
+                print(f"Answer Relevance Score Mean: {metrics.get('answer_relevance/v1/mean', 0.0)}")
+                if 'context' in eval_data.columns:
+                    print(f"Relevance Score Mean: {metrics.get('relevance/v1/mean', 0.0)}")
+                    print(f"Faithfulness Score Mean: {metrics.get('faithfulness/v1/mean', 0.0)}")
             print(f"Flesch-Kincaid Grade Level: {metrics.get('flesch_kincaid_grade_level/v1/mean', 0.0):.2f}")
             print(f"ARI Grade Level: {metrics.get('ari_grade_level/v1/mean', 0.0):.2f}")
             print("-" * 50)

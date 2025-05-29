@@ -175,8 +175,10 @@ python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --embedding-mod
 
 Using LLM-as-a-judge with custom Ollama configuration:
 ```bash
-python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --llm-as-a-judge --ollama-address http://localhost:11434 --ollama-model mistral:7b
+python ./llm-simple-rag-chat.py --documents-folder /path/to/docs --mode auto --llm-as-a-judge --ollama-address http://localhost:11434 --ollama-model mistral:7b
 ```
+
+Note: The LLM-as-a-judge feature is optimized for batch evaluation in auto mode, as it leverages MLflow's evaluation pipeline to process multiple questions efficiently. While it can be used in interactive mode, auto mode is recommended for comprehensive evaluation of answer quality across multiple questions.
 
 List available Google models:
 ```bash

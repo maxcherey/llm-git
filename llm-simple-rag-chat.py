@@ -24,7 +24,7 @@ from llm_simple_rag_chat.genai_utils import (
 )
 
 from llm_simple_rag_chat.eval_utils import (
-    evaluate_answer,
+    evaluate_answers,
     configure_mlflow
 )
 
@@ -116,58 +116,75 @@ def process_auto_mode(qa_chain, questions_file, cache_dir, args):
     output_path, output_data = initialize_result_file(args, questions_file)
     output_data["categories"] = {}
     
+    # Collect all questions and get answers in batch
+    all_questions_for_eval = []
+    category_question_mapping = []  # To keep track of which question belongs to which category
+
     # Process each category
     for category, category_data in questions_data['categories'].items():
         print(f"\nProcessing category: {category}")
         output_data['categories'][category] = {"questions": []}
-        
-        # Process each question in the category
+
+        # Collect questions for this category
         for question_data in category_data['questions']:
             print(f"\nProcessing question: {question_data['question']}")
-            
+
             # Get answer from AI
             response = qa_chain.invoke({"query": question_data['question']})
             answer = response['result']
-            
-            # Run evaluation with cache directory
-            eval_results = evaluate_answer(
-                question_data['question'],
-                answer,
-                question_data['reference_answer'],
-                source_documents=response['source_documents'],
-                verbose=False,  # Don't print results in auto mode
-                weight=question_data['weight'],
-                cache_dir=cache_dir,
-                llm_as_a_judge=args.llm_as_a_judge,
-                model_name=args.ollama_model
-            )
-            
-            # Create output question data
-            output_question = {
+
+            # Create question for evaluation
+            all_questions_for_eval.append({
+                'question': question_data['question'],
+                'answer': answer,
+                'reference_answer': question_data['reference_answer'],
+                'source_documents': response['source_documents'],
+                'weight': question_data['weight'],
+            })
+
+            # Store original question data for output
+            output_data['categories'][category]['questions'].append({
                 "question": question_data['question'],
                 "reference_answer": question_data['reference_answer'],
                 "weight": question_data['weight'],
                 "model_answer": answer,
-                "eval_results": {
-                    "metrics": eval_results['metrics'] if eval_results else {},
-                    "eval_table": eval_results['eval_table'].to_dict() if eval_results else {}
+                "eval_results": {}  # Will be filled after evaluation
+            })
+
+            # Keep track of category and question index
+            category_question_mapping.append((category, len(output_data['categories'][category]['questions']) - 1))
+
+    # Run batch evaluation for all questions
+    print("\nRunning batch evaluation for all questions...")
+    eval_results = evaluate_answers(
+        all_questions_for_eval,
+        verbose=False,  # Don't print results in auto mode
+        cache_dir=cache_dir,
+        llm_as_a_judge=args.llm_as_a_judge,
+        model_name=args.ollama_model
+    )
+
+    # Update output data with evaluation results
+    if eval_results:
+        metrics = eval_results['metrics']
+        eval_table = eval_results['eval_table']
+
+        # Update each question's evaluation results
+        for i, (category, question_idx) in enumerate(category_question_mapping):
+            if i < len(eval_table):
+                output_data['categories'][category]['questions'][question_idx]['eval_results'] = {
+                    "metrics": metrics,
+                    "eval_table": eval_table.iloc[i].to_dict()
                 }
-            }
-            
-            # Add to output data
-            output_data['categories'][category]['questions'].append(output_question)
-            
-            # Print summary metrics
-            if eval_results:
-                metrics = eval_results['metrics']
-                print(f"Evaluation metrics: {metrics}")
-            
-        # Save evaluation results
-        with open(output_path, 'w') as f:
-            json.dump(output_data, f, indent=2)
-        
-        print(f"\nEvaluation results saved to: {output_path}")
-        print("All questions processed successfully!")
+
+        print(f"Overall evaluation metrics: {metrics}")
+
+    # Save final evaluation results
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+
+    print(f"\nEvaluation results saved to: {output_path}")
+    print("All questions processed successfully!")
     return output_path, output_data
 
 def initialize_result_file(args, source_file=None):
@@ -248,11 +265,16 @@ def run_interactive_mode(qa_chain, cache_dir, args):
         # Get reference answer for evaluation
         reference_answer = input("\nPlease provide the reference answer for evaluation (or press Enter to skip): ")
         if reference_answer:
-            eval_results = evaluate_answer(
-                query, 
-                answer, 
-                reference_answer, 
-                source_documents=response['source_documents'],
+            # Create single question for evaluation
+            question = [{
+                'question': query,
+                'answer': answer,
+                'reference_answer': reference_answer,
+                'source_documents': response['source_documents'],
+            }]
+
+            eval_results = evaluate_answers(
+                questions=question,
                 cache_dir=cache_dir,
                 llm_as_a_judge=args.llm_as_a_judge,
                 model_name=args.ollama_model
