@@ -97,8 +97,11 @@ def create_llm(args):
     print(f"Initializing LLM with model: {args.reasoning_model}")
     llm = ChatGoogleGenerativeAI(
         model=args.reasoning_model,
-        temperature=0.1,
-        google_api_key=api_key  # Explicitly pass the key
+        temperature=args.temperature,
+        google_api_key=api_key,  # Explicitly pass the key
+        max_tokens=args.n_tokens, # ChatGoogleGenerativeAI default is 64 tokens!
+        top_p=args.top_p,
+        top_k=args.top_k,
     )
 
     # Test the LLM

@@ -6,3 +6,5 @@ langchain_google_genai
 langchain_huggingface
 mlflow
 tiktoken
+rank_bm25
+unstructured

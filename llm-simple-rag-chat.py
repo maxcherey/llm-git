@@ -60,6 +60,18 @@ def parse_arguments():
         action="store_true",
         help="List available Google models and exit (useful for validating API token and selecting models)"
     )
+    g.add_argument('--temperature', type=float, default=0.1,
+        help="Model temperature for controlling randomness in responses (0.0 = deterministic, 2.0 = more random)"
+    )
+    g.add_argument('--n-tokens', type=int, default=1024,
+        help="Maximum number of tokens for model responses"
+    )
+    g.add_argument('--top-p', type=float, default=0.95,
+        help="Top-p sampling parameter for controlling diversity of responses (0.0 = deterministic, 1.0 = more diverse)"
+    )
+    g.add_argument('--top-k', type=int, default=20,
+        help="Top-k sampling parameter for controlling diversity of responses (0 = no top-k)"
+    )
 
     g = parser.add_argument_group('Document options')
     g.add_argument('-d', '--documents-folder',
@@ -103,6 +115,16 @@ def parse_arguments():
         default=".cache",
         help="Directory to store cached artifacts and data"
     )
+
+    g = parser.add_argument_group('General RAG options')
+    g.add_argument('--embeddings-top-k', type=int, help='Number of vector search candidates to retrieve', default=50)
+
+    g = parser.add_argument_group('Hybrid RAG options')
+    g.add_argument('--use-bm25-reranker', action='store_true', help='Enable BM25 (keyword-based) reranking', default=False)
+    g.add_argument('--bm25-top-k', type=int, help='Number of BM25 candidates to retrieve', default=25)
+    g.add_argument('--use-document-reranker', action='store_true', help='Enable document reranking with cross-encoder model', default=False)
+    g.add_argument('--hf-document-reranker-model', help='Name of the document reranker model that will be loaded from HuggingFace', default='cross-encoder/ms-marco-MiniLM-L6-v2')
+    g.add_argument('--document-reranker-top-n', type=int, help='Number of documents that reranker model should keep', default=10)
 
     return parser.parse_args()
 
@@ -341,9 +363,21 @@ def main():
     # Load and cache document chunks
     chunks, changed = load_and_cache_chunks(args.documents_folder, args.cache_dir)
     print(f"\nDocument chunks loaded. Changes detected: {changed}")
-    
+
     # Create LLM and build RAG system
-    qa_chain = build_rag_system(args.embedding_model, api_key, chunks, llm, args.cache_dir)
+    qa_chain = build_rag_system(
+        args.embedding_model,
+        args.embeddings_top_k,
+        args.use_bm25_reranker,
+        args.bm25_top_k,
+        args.use_document_reranker,
+        args.hf_document_reranker_model,
+        args.document_reranker_top_n,
+        api_key,
+        chunks,
+        llm,
+        args.cache_dir,
+    )
 
     # Run in selected mode
     if args.mode == "interactive":
