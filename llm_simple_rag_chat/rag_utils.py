@@ -56,7 +56,8 @@ def get_cached_vector_store(embedding_model, chunks, embeddings, cache_dir):
     vector_store = Chroma.from_documents(
         chunks,
         embeddings,
-        persist_directory=vector_store_path
+        persist_directory=vector_store_path,
+        collection_metadata={"hnsw:space": "cosine"}
     )
     print("Vector store created and persisted to disk.")
 
@@ -95,7 +96,7 @@ def build_rag_system(
 
     @chain
     def vector_retriever(query: str):
-        docs, scores = zip(*vector_store.similarity_search_with_score(query, embeddings_top_k))
+        docs, scores = zip(*vector_store.similarity_search_with_relevance_scores(query, embeddings_top_k))
         for doc, score in zip(docs, scores):
             doc.metadata["similarity_score"] = score
         return docs
