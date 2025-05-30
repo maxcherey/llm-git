@@ -131,7 +131,10 @@ Hybrid RAG Options:
 - `--bm25-top-k`: Number of BM25 candidates to retrieve (default: 25)
 - `--use-document-reranker`: Enable document reranking with cross-encoder model
 - `--hf-document-reranker-model`: Name of the document reranker model from HuggingFace (default: cross-encoder/ms-marco-MiniLM-L6-v2)
+- `--document-reranker-url`: URL of the external reranker model (overrides --hf-document-reranker-model)
+- `--document-reranker-api-token`: API token for the external reranker model
 - `--document-reranker-top-n`: Number of documents that reranker model should keep (default: 10)
+- `--document-reranker-score-threshold`: Filter reranker results by score threshold (the score scale depends on the model; not used if set to None)
 
 #### Installation
 
