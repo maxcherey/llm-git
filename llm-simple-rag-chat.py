@@ -254,9 +254,9 @@ def initialize_result_file(args, source_file=None):
 
     # Generate output filename based on mode
     if args.mode == "auto":
-        output_filename = f"{timestamp}_{Path(source_file).stem}_evaluation_results_{args.embedding_model.replace('/', '_')}.json"
+        output_filename = f"{timestamp}_{Path(source_file).stem}_evaluation_results_{args.embedding_model_name.replace('/', '_')}.json"
     else:
-        output_filename = f"{timestamp}_interactive_session_{args.embedding_model.replace('/', '_')}.json"
+        output_filename = f"{timestamp}_interactive_session_{args.embedding_model_name.replace('/', '_')}.json"
 
     # Create output path
     output_path = results_dir / output_filename
@@ -265,7 +265,7 @@ def initialize_result_file(args, source_file=None):
     output_data = {
         "metadata": {
             "timestamp": timestamp,
-            "model": args.embedding_model,
+            "model": args.embedding_model_name,
             "mode": args.mode,
             "source_file": source_file
         }
@@ -310,14 +310,14 @@ def run_interactive_mode(qa_chain, args):
             print(f"    Similarity score: {similarity_score}")
             print(f"    Relevance score: {reranker_score}\n")
 
+        # TODO: Support other providers
+        if args.chat_model_provider != 'openai':
+            print('\nWarning: Non-OpenAI chat model provider detected. Evaluation with mlflow will be skipped.')
+            continue
+
         # Get reference answer for evaluation
         reference_answer = input("\nPlease provide the reference answer for evaluation (or press Enter to skip): ")
         if reference_answer:
-            # TODO: Support other providers
-            if args.chat_model_provider != 'openai':
-                print('\nWarning: Non-OpenAI chat model provider detected. Evaluation with mlflow will be skipped.')
-                return
-
             # Create single question for evaluation
             question = [{
                 'question': query,
@@ -388,7 +388,10 @@ def main():
         print(f"Created cache directory at: {cache_dir}")
 
     # Configure MLflow
-    configure_mlflow(args.chat_model_url, llm_as_a_judge=args.llm_as_a_judge)
+    if args.chat_model_provider == 'openai':
+        configure_mlflow(args.chat_model_url, llm_as_a_judge=args.llm_as_a_judge)
+    else:
+        print("\nWarning: Non-OpenAI chat model provider detected. MLflow will not be configured for evaluation.")
 
     # Setup an LLM
     llm = create_llm(
