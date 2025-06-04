@@ -7,7 +7,6 @@ import yaml
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
-from langchain_core.callbacks.base import BaseCallbackHandler
 
 load_dotenv()
 
@@ -43,13 +42,6 @@ yaml.representer.SafeRepresenter.add_representer(str, str_presenter) # to use wi
 class VerboseSafeDumper(yaml.SafeDumper):
     def ignore_aliases(self, data):
         return True
-
-class CustomHandler(BaseCallbackHandler):
-    def on_llm_start(
-        self, serialized, prompts, **kwargs
-    ):
-        formatted_prompts = "\n".join(prompts)
-        print(f"Prompt:\n{formatted_prompts}")
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Simple chat application with RAG")
@@ -162,7 +154,7 @@ def process_auto_mode(qa_chain, questions_file):
                 continue
 
             # Get answer from AI
-            response = qa_chain.invoke({"query": question + "/no_think"}, config={"callbacks": [CustomHandler()]}) # TODO: Required for Qwen3
+            response = qa_chain.invoke({"query": question + "/no_think"}) # TODO: Required for Qwen3
             answer = response['result'].replace('<think>', '').replace('</think>', '').strip() # TODO: Required for Qwen3
             # TODO: Maybe filter by keywords like "I don't know" or "I do not know"?
             collection.append({
