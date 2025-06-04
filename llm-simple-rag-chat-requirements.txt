@@ -1,10 +1,19 @@
+python-dotenv
 pandas
+httpx
+
 langchain_community
 langchain_chroma
-google.generativeai
-langchain_google_genai
 langchain_huggingface
-mlflow
+langchain_google_genai
+langchain_openai
+
+google.generativeai # Required by langchain_google_genai
+openai # Required by langchain_openai
 tiktoken
+mlflow
 rank_bm25
 unstructured
+pymupdf
+faiss-cpu
+numpy<2 # Required by faiss-cpu

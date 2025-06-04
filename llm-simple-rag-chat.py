@@ -5,19 +5,22 @@ import logging
 import json
 from pathlib import Path
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from llm_simple_rag_chat.document_utils import (
     load_and_cache_chunks
 )
 
 from llm_simple_rag_chat.rag_utils import (
-    build_rag_system, setup_document_reranker
+    build_rag_system, create_document_reranker
 )
 
 from llm_simple_rag_chat.genai_utils import (
-    setup_genai_environment,
-    validate_model,
-    create_llm
+    create_llm,
+    create_embeddings,
+    list_models
 )
 
 from llm_simple_rag_chat.eval_utils import (
@@ -38,20 +41,36 @@ time_start = time.time()
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Simple chat application with RAG and answers evaluations")
+    parser = argparse.ArgumentParser(description="Simple chat application with RAG")
 
     g = parser.add_argument_group('Generic options')
     g.add_argument('-v', '--verbose', action='count', help='enable verbose mode (use -vv for max verbosity)')
     g.add_argument('-l', '--logfile', action='store', help='log filename')
 
     g = parser.add_argument_group('Model options')
-    g.add_argument('--reasoning-model',
-        default="models/gemini-2.0-flash",
-        help="Gemini model for reasoning/chat"
+    g.add_argument('--chat-model-provider',
+        default="google",
+        help="Chat model provider (e.g., google, huggingface, etc. If using Google, use 'google' for Gemini models)"
     )
-    g.add_argument('--embedding-model',
+    g.add_argument('--chat-model-url',
+        default=None,
+        help="Base URL for the chat model (if using an external API). If using Google, leave this as None."
+    )
+    g.add_argument('--chat-model-name',
+        default="models/gemini-2.0-flash",
+        help="Gemini model for reasoning/chat (e.g., 'models/gemini-2.0-flash' for Gemini 2.0 Flash)"
+    )
+    g.add_argument('--embedding-model-provider',
+        default="google",
+        help="Embedding model provider (e.g., google, huggingface, etc. If using Google, use 'google' for Gemini models)"
+    )
+    g.add_argument('--embedding-model-url',
+        default=None,
+        help="Base URL for the embedding model (if using an external API). If using Google, leave this as 'None'."
+    )
+    g.add_argument('--embedding-model-name',
         default="models/embedding-001",
-        help="Gemini model for embeddings"
+        help="Embedding model name (e.g., 'models/embedding-001' for Google Gemini embeddings, or a HuggingFace model name)"
     )
     g.add_argument('--list-models',
         action="store_true",
@@ -75,6 +94,9 @@ def parse_arguments():
         default="./documents",
         help="Path to the documents folder"
     )
+    g.add_argument('--documents-collection-name', type=str, help='Name of the vector index collection.', default="default")
+    g.add_argument('--documents-chunk-size', type=int, help='Size of the split document chunk in tokens. Note that maximum chunk size is limited by either embedding model or reranker model.', default=800)
+    g.add_argument('--documents-chunk-overlap-size', type=int, help='Size of the chunk overlap size in tokens. Recommended value is between 10-20% of chunk size', default=80)
 
     g = parser.add_argument_group('Evaluation options')
     g.add_argument('--analyze-results',
@@ -89,14 +111,15 @@ def parse_arguments():
         action="store_true",
         help="Use LLM-based metrics for answer evaluation"
     )
-    g.add_argument('--ollama-address',
-        default="http://localhost:11434",
-        help="Address of the Ollama server"
-    )
-    g.add_argument('--ollama-model',
-        default="qwen3:8b",
-        help="Model name to use for Ollama-based evaluations"
-    )
+    # TODO: Add separate parameters for evaluation pipeline
+    # g.add_argument('--ollama-address',
+    #     default="http://localhost:11434",
+    #     help="Address of the Ollama server"
+    # )
+    # g.add_argument('--ollama-model',
+    #     default="qwen3:8b",
+    #     help="Model name to use for Ollama-based evaluations"
+    # )
 
     g = parser.add_argument_group('Mode options')
     g.add_argument('--mode',
@@ -114,22 +137,25 @@ def parse_arguments():
     )
 
     g = parser.add_argument_group('General RAG options')
-    g.add_argument('--embeddings-top-k', type=int, help='Number of vector search candidates to retrieve', default=50)
+    g.add_argument('--embeddings-top-k', type=int, help='Number of vector search candidates to retrieve.', default=75)
+    g.add_argument('--embeddings-score-threshold', type=float, help='Filter vector search results by similarity score threshold. Vector storage uses cosine similarity where with the scale from 0 (different) to 1 (similar). Not used if set to "None".', default=None)
 
     g = parser.add_argument_group('Hybrid RAG options')
-    g.add_argument('--use-bm25-reranker', action='store_true', help='Enable BM25 (keyword-based) reranking', default=False)
-    g.add_argument('--bm25-top-k', type=int, help='Number of BM25 candidates to retrieve', default=25)
-    g.add_argument('--use-document-reranker', action='store_true', help='Enable document reranking with cross-encoder model', default=False)
-    g.add_argument('--hf-document-reranker-model', help='Name of the document reranker model that will be loaded from HuggingFace', default='cross-encoder/ms-marco-MiniLM-L6-v2')
-    g.add_argument('--document-reranker-url', help='URL of the external reranker model, for example "http://127.0.0.1/rerank". Has the priority over "--hf-document-reranker-model".', default=None)
+    g.add_argument('--use-bm25-reranker', action='store_true', help='Enable BM25 (keyword-based) reranking.', default=False)
+    g.add_argument('--bm25-top-k', type=int, help='Number of BM25 candidates to retrieve', default=50)
+    g.add_argument('--bm25-weight', type=float, help='Weight of BM25 candidates.', default=0.5)
+    g.add_argument('--document-reranker-provider', type=str, help='Enable document reranking with cross-encoder model. Not used if not specified', default=None)
+    g.add_argument('--document-reranker-model', help='Name of the document reranker model that will be loaded from HuggingFace', default='cross-encoder/ms-marco-MiniLM-L6-v2')
+    g.add_argument('--document-reranker-url', help='URL of the external reranker model, for example "http://127.0.0.1/v1/rerank".', default=None)
     g.add_argument('--document-reranker-api-token', help='API token for the external reranker model.', default=None)
     g.add_argument('--document-reranker-top-n', type=int, help='Number of documents that reranker model should keep', default=10)
-    g.add_argument('--document-reranker-score-threshold', type=float, help='Filter reranker results by score threshold. Note that the score scale depends on the model and may range from -10 to 10. Not used if set to "None".', default=None)
+    g.add_argument('--document-reranker-normalize-scores', action=argparse.BooleanOptionalAction, help='Apply Sigmoid function that normalizes scores to 0 (irrelevant) to 1 (relevant).', default=True)
+    g.add_argument('--document-reranker-score-threshold', type=float, help='Filter reranker results by relevance score threshold. Not used if set to "None".', default=None)
 
     return parser.parse_args()
 
 # Auto mode handler
-def process_auto_mode(qa_chain, questions_file, cache_dir, args):
+def process_auto_mode(qa_chain, questions_file, args):
     # Load questions from JSON file
     with open(questions_file, 'r') as f:
         questions_data = json.load(f)
@@ -176,14 +202,24 @@ def process_auto_mode(qa_chain, questions_file, cache_dir, args):
             # Keep track of category and question index
             category_question_mapping.append((category, len(output_data['categories'][category]['questions']) - 1))
 
+    # TODO: Support other providers
+    if args.chat_model_provider != 'openai':
+        print('\nWarning: Non-OpenAI chat model provider detected. Evaluation with mlflow will be skipped.')
+        return
+
     # Run batch evaluation for all questions
     print("\nRunning batch evaluation for all questions...")
     eval_results = evaluate_answers(
+        args.chat_model_name,
         all_questions_for_eval,
+        model_kwargs={
+            "max_tokens": args.n_tokens,
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+            "top_k": args.top_k,
+        },
         verbose=False,  # Don't print results in auto mode
-        cache_dir=cache_dir,
         llm_as_a_judge=args.llm_as_a_judge,
-        model_name=args.ollama_model
     )
 
     # Update output data with evaluation results
@@ -219,9 +255,9 @@ def initialize_result_file(args, source_file=None):
 
     # Generate output filename based on mode
     if args.mode == "auto":
-        output_filename = f"{timestamp}_{Path(source_file).stem}_evaluation_results_{args.embedding_model.replace('/', '_')}.json"
+        output_filename = f"{timestamp}_{Path(source_file).stem}_evaluation_results_{args.embedding_model_name.replace('/', '_')}.json"
     else:
-        output_filename = f"{timestamp}_interactive_session_{args.embedding_model.replace('/', '_')}.json"
+        output_filename = f"{timestamp}_interactive_session_{args.embedding_model_name.replace('/', '_')}.json"
 
     # Create output path
     output_path = results_dir / output_filename
@@ -230,7 +266,7 @@ def initialize_result_file(args, source_file=None):
     output_data = {
         "metadata": {
             "timestamp": timestamp,
-            "model": args.embedding_model,
+            "model": args.embedding_model_name,
             "mode": args.mode,
             "source_file": source_file
         }
@@ -239,7 +275,7 @@ def initialize_result_file(args, source_file=None):
     return output_path, output_data
 
 
-def run_interactive_mode(qa_chain, cache_dir, args):
+def run_interactive_mode(qa_chain, args):
     print("\nReady to answer questions! Type 'exit' to quit.")
 
     # Initialize interactive session data
@@ -275,6 +311,11 @@ def run_interactive_mode(qa_chain, cache_dir, args):
             print(f"    Similarity score: {similarity_score}")
             print(f"    Relevance score: {reranker_score}\n")
 
+        # TODO: Support other providers
+        if args.chat_model_provider != 'openai':
+            print('\nWarning: Non-OpenAI chat model provider detected. Evaluation with mlflow will be skipped.')
+            continue
+
         # Get reference answer for evaluation
         reference_answer = input("\nPlease provide the reference answer for evaluation (or press Enter to skip): ")
         if reference_answer:
@@ -287,10 +328,15 @@ def run_interactive_mode(qa_chain, cache_dir, args):
             }]
 
             eval_results = evaluate_answers(
-                questions=question,
-                cache_dir=cache_dir,
+                args.chat_model_name,
+                question,
+                model_kwargs={
+                    "max_tokens": args.n_tokens,
+                    "temperature": args.temperature,
+                    "top_p": args.top_p,
+                    "top_k": args.top_k,
+                },
                 llm_as_a_judge=args.llm_as_a_judge,
-                model_name=args.ollama_model
             )
 
             # Add question data to session
@@ -320,7 +366,6 @@ def main():
             logging.FileHandler(args.logfile) if args.logfile else logging.StreamHandler()
         ]
     )
-    logger = logging.getLogger(__name__)
 
     # Validate documents folder
     if not os.path.exists(args.documents_folder) or not os.path.isdir(args.documents_folder) :
@@ -329,8 +374,7 @@ def main():
 
     # List models if requested
     if args.list_models:
-        setup_genai_environment()
-        validate_model(args.embedding_model)
+        list_models()
         return
 
     # Analyze results if requested
@@ -344,37 +388,66 @@ def main():
         cache_dir.mkdir(parents=True, exist_ok=True)
         print(f"Created cache directory at: {cache_dir}")
 
-    # Setup Google Generative AI environment
-    setup_genai_environment()
-    api_key, llm = create_llm(args)
-
     # Configure MLflow
-    configure_mlflow(args.cache_dir, llm_as_a_judge=args.llm_as_a_judge, ollama_address=args.ollama_address)
+    if args.chat_model_provider == 'openai':
+        configure_mlflow(args.chat_model_url, llm_as_a_judge=args.llm_as_a_judge)
+    else:
+        print("\nWarning: Non-OpenAI chat model provider detected. MLflow will not be configured for evaluation.")
+
+    # Setup an LLM
+    llm = create_llm(
+        args.chat_model_provider,
+        args.chat_model_name,
+        args.chat_model_url,
+        args.temperature,
+        args.n_tokens,
+        args.top_p,
+        args.top_k
+    )
 
     # Load and cache document chunks
-    chunks, changed = load_and_cache_chunks(args.documents_folder, args.cache_dir)
+    # TODO: Use embedder tokenizer
+    chunks, changed = load_and_cache_chunks(
+        args.documents_folder,
+        args.documents_chunk_size,
+        args.documents_chunk_overlap_size,
+        llm.get_num_tokens,
+        args.cache_dir
+    )
     print(f"\nDocument chunks loaded. Changes detected: {changed}")
 
-    reranker = setup_document_reranker(args)
+    # Use the correct argument name for embedding model
+    embeddings = create_embeddings(args.embedding_model_provider, args.embedding_model_name, args.embedding_model_url)
+
+    reranker = create_document_reranker(
+        args.document_reranker_provider,
+        args.document_reranker_model,
+        args.document_reranker_url,
+        args.document_reranker_top_n,
+        args.document_reranker_normalize_scores,
+        args.document_reranker_score_threshold
+    )
 
     # Create LLM and build RAG system
     qa_chain = build_rag_system(
-        args.embedding_model,
+        llm,
+        embeddings,
         args.embeddings_top_k,
+        args.embeddings_score_threshold,
         args.use_bm25_reranker,
+        args.bm25_weight,
         args.bm25_top_k,
         reranker,
-        api_key,
         chunks,
-        llm,
         args.cache_dir,
+        args.documents_collection_name,
     )
 
     # Run in selected mode
     if args.mode == "interactive":
-        run_interactive_mode(qa_chain, args.cache_dir, args)
+        run_interactive_mode(qa_chain, args)
     else:
-        process_auto_mode(qa_chain, args.questions_file, args.cache_dir, args)
+        process_auto_mode(qa_chain, args.questions_file, args)
 
     # Log execution time
     time_end = time.time()
