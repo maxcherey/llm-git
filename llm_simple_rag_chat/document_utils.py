@@ -1,9 +1,11 @@
 import os
 import json
 import pickle
+from typing import Callable, List, Tuple
 from datetime import datetime
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredMarkdownLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import PyMuPDFLoader, TextLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter, MarkdownTextSplitter
+from langchain.schema import Document
 
 def get_folder_mtimes(folder_path):
     mtimes = {}
@@ -32,7 +34,7 @@ def check_folder_for_changes_mtime(folder_path, cache_file="mtime_cache.json", c
     # Create cache directory if it doesn't exist
     os.makedirs(cache_dir, exist_ok=True)
     cache_file_path = os.path.join(cache_dir, cache_file)
-    
+
     if not os.path.exists(cache_file_path):
         print(f"Cache file '{cache_file}' not found. Creating new cache file.")
         # Save current modification times to new cache file
@@ -41,7 +43,7 @@ def check_folder_for_changes_mtime(folder_path, cache_file="mtime_cache.json", c
             if not current_mtimes:
                 print("Warning: No modification times found in current folder")
                 return True, current_mtimes
-            
+
             _save_mtimes(cache_file_path, current_mtimes)
             return True, current_mtimes
         except Exception as e:
@@ -82,21 +84,27 @@ def check_folder_for_changes_mtime(folder_path, cache_file="mtime_cache.json", c
         if path not in previous_mtimes:
             print(f"Added: {path}")
             changed = True
-    
+
     # Save current modification times to cache
     _save_mtimes(cache_file_path, current_mtimes)
 
     return changed, current_mtimes
 
 
-def load_and_cache_chunks(documents_folder, cache_dir=".cache"):
+def load_and_cache_chunks(
+    documents_folder: str,
+    chunk_size: int,
+    chunk_overlap_size: int,
+    llm_tokenizer_fn: Callable,
+    cache_dir: str
+) -> Tuple[List[Document], bool]:
     """
     Load and cache document chunks with modification time checking.
-    
+
     Args:
         documents_folder (str): Path to the documents folder
         cache_dir (str): Directory to store cached chunks and metadata
-        
+
     Returns:
         tuple: (chunks, changed)
             chunks: List of document chunks
@@ -108,7 +116,7 @@ def load_and_cache_chunks(documents_folder, cache_dir=".cache"):
         cache_file="mtime_cache.json",
         cache_dir=cache_dir
     )
-    
+
     # Try to load cached chunks if no changes detected
     if not changed:
         chunks_cache_path = os.path.join(cache_dir, "document_chunks.pkl")
@@ -118,11 +126,10 @@ def load_and_cache_chunks(documents_folder, cache_dir=".cache"):
                     return pickle.load(f), False
             except Exception as e:
                 print(f"Error loading cached chunks: {e}")
-    
+
     # Load and process documents
-    documents = load_documents(documents_folder)
-    chunks = split_documents(documents)
-    
+    chunks = load_and_split_documents(documents_folder, chunk_size, chunk_overlap_size, llm_tokenizer_fn)
+
     # Save chunks to cache
     chunks_cache_path = os.path.join(cache_dir, "document_chunks.pkl")
     try:
@@ -130,25 +137,31 @@ def load_and_cache_chunks(documents_folder, cache_dir=".cache"):
             pickle.dump(chunks, f, protocol=pickle.HIGHEST_PROTOCOL)
     except Exception as e:
         print(f"Error saving chunks to cache: {e}")
-    
+
     return chunks, True
 
-def load_documents(document_folder):
-    documents = []
+def load_and_split_documents(
+    document_folder: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    llm_num_tokens_fn: Callable,
+) -> List[Document]:
     print(f"Starting to load documents from: {document_folder}")
+    md_documents:  List[Document] = []
+    pdf_documents: List[Document] = []
+    txt_documents: List[Document] = []
 
     # Use os.walk to traverse through the main folder and all its subfolders
     for dirpath, dirnames, filenames in os.walk(document_folder):
         for filename in filenames:
             file_path = os.path.join(dirpath, filename)
-            
+
             # Determine the correct loader based on file extension
             if filename.endswith(".pdf"):
                 try:
-                    loader = PyPDFLoader(file_path)
+                    loader = PyMuPDFLoader(file_path)
                     loaded_docs = loader.load()
-                    if loaded_docs is not None:
-                        documents.extend(loaded_docs)
+                    pdf_documents.extend(loaded_docs)
                     print(f"Loaded PDF: {file_path}")
                 except Exception as e:
                     print(f"Error loading PDF {file_path}: {e}")
@@ -156,17 +169,15 @@ def load_documents(document_folder):
                 try:
                     loader = TextLoader(file_path, encoding='utf-8')  # Specify encoding for text files
                     loaded_docs = loader.load()
-                    if loaded_docs is not None:
-                        documents.extend(loaded_docs)
+                    txt_documents.extend(loaded_docs)
                     print(f"Loaded TXT: {file_path}")
                 except Exception as e:
                     print(f"Error loading TXT {file_path}: {e}")
             elif filename.endswith(".md") or filename.endswith(".markdown"):
                 try:
-                    loader = UnstructuredMarkdownLoader(file_path)
+                    loader = TextLoader(file_path, encoding='utf-8')  # Specify encoding for text files
                     loaded_docs = loader.load()
-                    if loaded_docs is not None:
-                        documents.extend(loaded_docs)
+                    md_documents.extend(loaded_docs)
                     print(f"Loaded Markdown: {file_path}")
                 except Exception as e:
                     print(f"Error loading Markdown {file_path}: {e}")
@@ -183,15 +194,23 @@ def load_documents(document_folder):
             #         print(f"Error loading DOCX {file_path}: {e}")
             else:
                 print(f"Skipping unsupported file type: {file_path}")
-    
-    print(f"\nFinished loading. Total documents loaded: {len(documents)}")
-    return documents if documents else []
 
-def split_documents(documents, chunk_size=1000, chunk_overlap=200):
-    text_splitter = RecursiveCharacterTextSplitter(
+    print(f"\nFinished loading. Total documents loaded: {len(md_documents) + len(pdf_documents) + len(txt_documents)}")
+
+    # TODO: Need to keep line and column numbers for text files
+    md_chunks = MarkdownTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        length_function=len,
-        is_separator_regex=False,
-    )
-    return text_splitter.split_documents(documents)
+        length_function=llm_num_tokens_fn,
+    ).split_documents(md_documents)
+    pdf_chunks = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=llm_num_tokens_fn,
+    ).split_documents(pdf_documents)
+    txt_chunks = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=llm_num_tokens_fn,
+    ).split_documents(txt_documents)
+    return md_chunks + pdf_chunks + txt_chunks

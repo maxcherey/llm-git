@@ -4,6 +4,8 @@
 
 # Results and temporary files
 .results/
+.answers/
+.mlflow/
 
 # Python specific
 llm_simple_rag_chat/__pycache__/
