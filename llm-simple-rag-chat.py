@@ -94,6 +94,7 @@ def parse_arguments():
         default="./documents",
         help="Path to the documents folder"
     )
+    g.add_argument('--documents-collection-name', type=str, help='Name of the vector index collection.', default="default")
     g.add_argument('--documents-chunk-size', type=int, help='Size of the split document chunk in tokens. Note that maximum chunk size is limited by either embedding model or reranker model.', default=800)
     g.add_argument('--documents-chunk-overlap-size', type=int, help='Size of the chunk overlap size in tokens. Recommended value is between 10-20% of chunk size', default=80)
 
@@ -439,6 +440,7 @@ def main():
         reranker,
         chunks,
         args.cache_dir,
+        args.documents_collection_name,
     )
 
     # Run in selected mode

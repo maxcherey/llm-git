@@ -93,8 +93,8 @@ class ScoredCrossEncoderReranker(CrossEncoderReranker):
                 out.append(doc)
         return out
 
-def get_cached_vector_store(embedding_model, chunks, embedding, cache_dir):
-    vector_store_path = os.path.join(cache_dir, f"vector_store")
+def get_cached_vector_store(collection_name: str, embedding_model: str, chunks: List[Document], embedding: Embeddings, cache_dir: str):
+    vector_store_path = os.path.join(cache_dir, f"vector_store", embedding_model, collection_name)
     state_file_path = os.path.join(vector_store_path, "vector_state.json")
 
     # Create hash of chunks using hashlib
@@ -112,7 +112,6 @@ def get_cached_vector_store(embedding_model, chunks, embedding, cache_dir):
                 vector_store = FAISS.load_local(
                     vector_store_path,
                     embedding,
-                    index_name=embedding_model.replace("/", "_"),
                     allow_dangerous_deserialization=True,
                     distance_strategy=DistanceStrategy.COSINE,
                     relevance_score_fn=lambda distance: (2 - distance) / 2
@@ -136,7 +135,7 @@ def get_cached_vector_store(embedding_model, chunks, embedding, cache_dir):
         # TODO: Not sure if this formula is correct
         relevance_score_fn=lambda distance: (2 - distance) / 2
     )
-    vector_store.save_local(vector_store_path, embedding_model.replace("/", "_"))
+    vector_store.save_local(vector_store_path)
     print("Vector store created and persisted to disk.")
 
     # Save state file
@@ -193,13 +192,14 @@ def build_rag_system(
     bm25_weight: float,
     bm25_top_k: int,
     reranker: BaseDocumentCompressor | None,
-    chunks,
-    cache_dir
+    chunks: List[Document],
+    cache_dir: str,
+    collection_name: str,
 ):
     print(f"Initializing embedding with model: {embedding.model}")
 
     # Get or create vector store
-    vector_store = get_cached_vector_store(embedding.model, chunks, embedding, cache_dir)
+    vector_store = get_cached_vector_store(collection_name, embedding.model, chunks, embedding, cache_dir)
 
     @chain
     def vector_retriever(query: str):
