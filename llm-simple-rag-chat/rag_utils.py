@@ -4,7 +4,7 @@ import hashlib
 from langchain_chroma import Chroma
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from llm_simple_rag_chat.genai_utils import create_embeddings
+from genai_utils import create_embeddings
 
 def get_cached_vector_store(embedding_model, chunks, embeddings, cache_dir):
     vector_store_path = os.path.join(cache_dir, f"vector_store_{embedding_model}")

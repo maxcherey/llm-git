@@ -9,26 +9,26 @@ import pandas as pd
 from collections import defaultdict
 from datetime import datetime
 
-from llm_simple_rag_chat.document_utils import (
+from document_utils import (
     load_and_cache_chunks
 )
 
-from llm_simple_rag_chat.rag_utils import (
+from rag_utils import (
     build_rag_system
 )
 
-from llm_simple_rag_chat.genai_utils import (
+from genai_utils import (
     setup_genai_environment,
     validate_model,
     create_llm
 )
 
-from llm_simple_rag_chat.eval_utils import (
+from eval_utils import (
     evaluate_answer,
     configure_mlflow
 )
 
-from llm_simple_rag_chat.results_analysis import (
+from results_analysis import (
     analyze_evaluation_results
 )
 
