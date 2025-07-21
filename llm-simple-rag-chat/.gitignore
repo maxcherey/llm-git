@@ -4,8 +4,6 @@
 
 # Results and temporary files
 .results/
-.answers/
-.mlflow/
 
 # Python specific
 __pycache__/
